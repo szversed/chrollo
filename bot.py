@@ -21,7 +21,7 @@ user_genders = {}
 user_preferences = {}
 PAIR_COOLDOWNS = {}
 PAIR_COOLDOWN_SECONDS = 5 * 60
-ACCEPT_TIMEOUT = 30  # Mudado para 30 segundos
+ACCEPT_TIMEOUT = 60  # Mudado para 60 segundos
 CHANNEL_DURATION = 10 * 60
 
 setup_channel_id = None
@@ -191,7 +191,7 @@ async def tentar_formar_dupla(guild):
                     "• Ambos precisam aceitar para começar a conversar\n"
                     "• ⏰ **10 minutos** de conversa após aceitar\n"
                     "• ❌ Se recusar: **5 minutos** de espera para encontrar a mesma pessoa\n"
-                    "• ⏳ **Chat será fechado em 30 segundos se ninguém aceitar**\n"
+                    "• ⏳ **Chat será fechado em 1 minuto se ninguém aceitar**\n"
                     "• 🔒 Chat totalmente anônimo e privado\n\n"
                     "💡 **Dica:** Sejam respeitosos e aproveitem a conversa!"
                 ),
@@ -214,7 +214,7 @@ async def tentar_formar_dupla(guild):
                 "📝 **Lembrete:**\n"
                 "• ⏰ 10 minutos de conversa\n"
                 "• ❌ Recusar = 5 minutos de espera\n"
-                "• ⏳ **Aceite em 30 segundos ou o chat será fechado**\n"
+                "• ⏳ **Aceite em 1 minuto ou o chat será fechado**\n"
                 "• 💬 Chat anônimo e seguro"
             )
             try:
@@ -248,7 +248,7 @@ async def _accept_timeout_handler(canal, timeout=ACCEPT_TIMEOUT):
                 embed = discord.Embed(
                     title="⏰ Tempo Esgotado",
                     description=(
-                        "O tempo para aceitar expirou (30 segundos).\n\n"
+                        "O tempo para aceitar expirou (1 minuto).\n\n"
                         "⚠️ **Nenhum dos dois aceitou a conversa a tempo.**\n"
                         "💫 Volte ao canal principal para tentar novamente!"
                     ),
@@ -648,7 +648,7 @@ class ConversationView(discord.ui.View):
                     f"{self.u1.mention} {'✅' if self.u1.id in accepted else '⏳'}\n"
                     f"{self.u2.mention} {'✅' if self.u2.id in accepted else '⏳'}\n\n"
                     "⏰ **Aguardando ambos aceitarem...**\n"
-                    "⏳ **Chat será fechado em 30 segundos se ninguém aceitar**\n"
+                    "⏳ **Chat será fechado em 1 mimuto se ninguém aceitar**\n"
                     "💡 **Lembrete:** 10 minutos de conversa após aceitar"
                 ),
                 color=0xFF6B9E
