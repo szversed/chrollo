@@ -363,6 +363,7 @@ class LeaveQueueView(discord.ui.View):
                 break
         
         if removed:
+            # Envia uma NOVA mensagem individual para o usuário
             embed = discord.Embed(
                 title="💌 RandoChat - Saiu da Fila",
                 description=(
@@ -373,7 +374,7 @@ class LeaveQueueView(discord.ui.View):
                 ),
                 color=0xFF9999
             )
-            await interaction.response.edit_message(embed=embed, view=TicketView())
+            await interaction.response.send_message(embed=embed, view=TicketView(), ephemeral=True)
         else:
             await interaction.response.send_message("❌ Você não estava na fila.", ephemeral=True)
 
@@ -390,6 +391,7 @@ class TicketView(discord.ui.View):
             color=0x66FF99
         )
         
+        # Envia uma NOVA mensagem individual para o usuário
         setup_message = await interaction.response.send_message(
             embed=embed, 
             view=GenderSetupView(None),
@@ -428,6 +430,7 @@ class TicketView(discord.ui.View):
                 ),
                 color=0xFF6B9E
             )
+            # Envia uma NOVA mensagem individual
             await interaction.response.send_message(embed=embed_explicacao, view=TicketView(), ephemeral=True)
             return
 
@@ -445,6 +448,7 @@ class TicketView(discord.ui.View):
                 ),
                 color=0xFF9999
             )
+            # Envia uma NOVA mensagem individual
             await interaction.response.send_message(embed=embed, view=TicketView(), ephemeral=True)
             return
         
@@ -463,7 +467,8 @@ class TicketView(discord.ui.View):
                     ),
                     color=0x66FF99
                 )
-                await interaction.response.edit_message(embed=embed, view=LeaveQueueView(user.id))
+                # Envia uma NOVA mensagem individual
+                await interaction.response.send_message(embed=embed, view=LeaveQueueView(user.id), ephemeral=True)
                 return
 
         fila_entry = {
@@ -490,7 +495,8 @@ class TicketView(discord.ui.View):
             ),
             color=0x66FF99
         )
-        await interaction.response.edit_message(embed=embed, view=LeaveQueueView(user.id))
+        # Envia uma NOVA mensagem individual
+        await interaction.response.send_message(embed=embed, view=LeaveQueueView(user.id), ephemeral=True)
         await tentar_formar_dupla(interaction.guild)
 
 class ConversationView(discord.ui.View):
@@ -689,6 +695,11 @@ async def setupcarente(interaction: discord.Interaction):
         await interaction.response.send_message("✅ Sistema RandoChat configurado com sucesso! Canal bloqueado para mensagens comuns.", ephemeral=True)
     except Exception:
         await interaction.response.send_message("❌ Erro ao enviar mensagem de setup", ephemeral=True)
+
+# EVENTO: Quando um membro entra no servidor - NÃO FAZ NADA
+@bot.event
+async def on_member_join(member):
+    pass
 
 @bot.event
 async def on_guild_channel_delete(channel):
