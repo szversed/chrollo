@@ -858,6 +858,23 @@ async def on_interaction(interaction: discord.Interaction):
             return
     await bot.process_application_commands(interaction)
 
+# EVENTO: Apaga mensagens de sistema (entrou/saiu) e mensagens normais
+@bot.event
+async def on_message(message):
+    if message.guild and message.guild.id == MINHA_GUILD_ID:
+        # Canal do RandoChat (setup) e canal específico onde aparecem as mensagens de entrada
+        canais_para_apagar = [setup_channel_id, 1436733269818343541]
+        
+        if message.channel.id in canais_para_apagar:
+            # Apaga mensagens de sistema (new_member) E mensagens normais de usuários
+            if (message.type == discord.MessageType.new_member or 
+                (message.author != bot.user and not message.author.guild_permissions.administrator)):
+                try:
+                    await message.delete()
+                except:
+                    pass
+    await bot.process_commands(message)
+
 @bot.event
 async def on_ready():
     print(f"✅ RandoChat online! Conectado como {bot.user.name}")
