@@ -145,10 +145,10 @@ async def tentar_formar_dupla(guild):
             
             nome_canal = gerar_nome_canal(guild)
     
-            categoria = discord.utils.get(guild.categories, name="RandoChat")
+            categoria = discord.utils.get(guild.categories, name="iTinder")
             if not categoria:
                 try:
-                    categoria = await guild.create_category("RandoChat")
+                    categoria = await guild.create_category("iTinder")
                 except Exception:
                     categoria = None
             
@@ -161,9 +161,9 @@ async def tentar_formar_dupla(guild):
             
             try:
                 if categoria:
-                    canal = await categoria.create_text_channel(nome_canal, overwrites=overwrites, reason="Canal RandoChat temporário")
+                    canal = await categoria.create_text_channel(nome_canal, overwrites=overwrites, reason="Canal iTinder temporário")
                 else:
-                    canal = await guild.create_text_channel(nome_canal, overwrites=overwrites, reason="Canal RandoChat temporário")
+                    canal = await guild.create_text_channel(nome_canal, overwrites=overwrites, reason="Canal iTinder temporário")
             except Exception:
                 fila_carentes.append(entry1)
                 fila_carentes.append(entry2)
@@ -184,7 +184,7 @@ async def tentar_formar_dupla(guild):
             gender2_display = get_gender_display(gender2)
             
             embed = discord.Embed(
-                title="💌 RandoChat - Par Encontrado!",
+                title="💌 iTinder - Par Encontrado!",
                 description=(
                     f"**{u1.mention}** ({gender1_display}) & **{u2.mention}** ({gender2_display})\n\n"
                     "📋 **Como funciona:**\n"
@@ -209,7 +209,7 @@ async def tentar_formar_dupla(guild):
                 return
             
             aviso_text = (
-                "💌 **Par encontrado no RandoChat!**\n\n"
+                "💌 **Par encontrado no iTinder!**\n\n"
                 f"Você foi levado para {canal.mention}\n"
                 "📝 **Lembrete:**\n"
                 "• ⏰ 10 minutos de conversa\n"
@@ -274,7 +274,7 @@ async def _auto_close_channel_after(canal, segundos=CHANNEL_DURATION):
                     description=(
                         "Seus **10 minutos** de conversa terminaram!\n\n"
                         "💫 Esperamos que tenha sido uma boa experiência.\n"
-                        "Volte sempre ao RandoChat! 💌"
+                        "Volte sempre ao iTinder! 💌"
                     ),
                     color=0x9999FF
                 )
@@ -385,7 +385,7 @@ class LeaveQueueView(discord.ui.View):
             user_id = interaction.user.id
             if user_id in user_messages:
                 embed = discord.Embed(
-                    title="💌 RandoChat - Saiu da Fila",
+                    title="💌 iTinder - Saiu da Fila",
                     description=(
                         f"**🚪 Você saiu da fila!**\n\n"
                         f"**Seu perfil:** {get_gender_display(user_genders.get(user_id, 'homem'))}\n"
@@ -413,7 +413,7 @@ class IndividualView(discord.ui.View):
         if user.id not in user_genders or user.id not in user_preferences:
             # Se não tem perfil, mostra mensagem na MESMA mensagem individual
             embed_explicacao = discord.Embed(
-                title="💌 RandoChat - Configure seu Perfil",
+                title="💌 iTinder - Configure seu Perfil",
                 description=(
                     "❌ **Você precisa configurar seu perfil primeiro!**\n\n"
                     "📋 **COMO FUNCIONA:**\n"
@@ -444,7 +444,7 @@ class IndividualView(discord.ui.View):
             preference_display = get_preference_display(user_preferences[user.id])
             
             embed = discord.Embed(
-                title="💌 RandoChat - Chat Ativo",
+                title="💌 iTinder - Chat Ativo",
                 description=(
                     f"**💬 Você já está em um chat ativo!**\n\n"
                     f"**Seu perfil:** {gender_display}\n"
@@ -472,7 +472,7 @@ class IndividualView(discord.ui.View):
                 preference_display = get_preference_display(user_preferences[user.id])
                 
                 embed = discord.Embed(
-                    title="💌 RandoChat - Na Fila",
+                    title="💌 iTinder - Na Fila",
                     description=(
                         f"**⏳ Você já está na fila!**\n\n"
                         f"**Seu perfil:** {gender_display}\n"
@@ -505,7 +505,7 @@ class IndividualView(discord.ui.View):
         preference_display = get_preference_display(user_preferences[user.id])
         
         embed = discord.Embed(
-            title="💌 RandoChat - Entrou na Fila",
+            title="💌 iTinder - Entrou na Fila",
             description=(
                 f"**✅ Entrou na Fila!**\n\n"
                 f"**Seu perfil:** {gender_display}\n"
@@ -572,7 +572,7 @@ class TicketView(discord.ui.View):
         if user.id not in user_genders or user.id not in user_preferences:
             # Se não tem perfil, cria o embed individual
             embed_explicacao = discord.Embed(
-                title="💌 RandoChat - Configure seu Perfil",
+                title="💌 iTinder - Configure seu Perfil",
                 description=(
                     "❌ **Você precisa configurar seu perfil primeiro!**\n\n"
                     "📋 **COMO FUNCIONA:**\n"
@@ -598,7 +598,7 @@ class TicketView(discord.ui.View):
         preference_display = get_preference_display(user_preferences[user.id])
         
         embed_inicial = discord.Embed(
-            title="💌 RandoChat - Pronto para Conversar",
+            title="💌 iTinder - Pronto para Conversar",
             description=(
                 f"**✅ Perfil Configurado!**\n\n"
                 f"**Seu perfil:** {gender_display}\n"
@@ -643,7 +643,7 @@ class ConversationView(discord.ui.View):
             msg = await self.canal.fetch_message(self.message_id)
             # MUDADO: Em vez de ❌, usar ⏳ para mostrar que está aguardando
             embed = discord.Embed(
-                title="💌 RandoChat - Confirmação",
+                title="💌 iTinder - Confirmação",
                 description=(
                     f"{self.u1.mention} {'✅' if self.u1.id in accepted else '⏳'}\n"
                     f"{self.u2.mention} {'✅' if self.u2.id in accepted else '⏳'}\n\n"
@@ -743,7 +743,7 @@ class EncerrarView(discord.ui.View):
                     title="🔒 Chat Encerrado",
                     description=(
                         "O chat foi encerrado pelo usuário.\n\n"
-                        "💫 Obrigado por usar o RandoChat!\n"
+                        "💫 Obrigado por usar o iTinder!\n"
                         "Volte sempre para novas conversas! 💌"
                     ),
                     color=0x9999FF
@@ -755,7 +755,7 @@ class EncerrarView(discord.ui.View):
         await encerrar_canal_e_cleanup(self.canal)
         await interaction.response.send_message("✅ Chat encerrado.", ephemeral=True)
 
-@bot.tree.command(name="setupcarente", description="Configura o sistema RandoChat (apenas admin)")
+@bot.tree.command(name="setupcarente", description="Configura o sistema iTinder (apenas admin)")
 async def setupcarente(interaction: discord.Interaction):
     if interaction.guild.id != MINHA_GUILD_ID:
         await interaction.response.send_message("❌ Este bot não está disponível neste servidor.", ephemeral=True)
@@ -772,10 +772,10 @@ async def setupcarente(interaction: discord.Interaction):
         canal_bloqueado = True
         setup_channel_id = interaction.channel.id
         
-        categoria = discord.utils.get(interaction.guild.categories, name="RandoChat")
+        categoria = discord.utils.get(interaction.guild.categories, name="iTinder")
         if not categoria:
             try:
-                await interaction.guild.create_category("RandoChat")
+                await interaction.guild.create_category("iTinder")
             except Exception:
                 pass
                 
@@ -784,9 +784,9 @@ async def setupcarente(interaction: discord.Interaction):
         return
     
     embed = discord.Embed(
-        title="💌 RandoChat - Sistema de Chat Anônimo",
+        title="💌 iTinder - Sistema de Chat Anônimo",
         description=(
-            "**Bem-vindo ao RandoChat!** 🌟\n\n"
+            "**Bem-vindo ao iTinder!** 🌟\n\n"
             "🔒 **Sistema totalmente anônimo e seguro**\n\n"
             "📋 **COMO FUNCIONA:**\n"
             "• ⏰ **10 minutos** de conversa por par\n"
@@ -804,13 +804,13 @@ async def setupcarente(interaction: discord.Interaction):
         ),
         color=0xFF6B9E
     )
-    embed.set_footer(text="RandoChat - Conectando pessoas anonimamente 💫")
+    embed.set_footer(text="iTinder - Conectando pessoas anonimamente 💫")
     
     view = TicketView()
     try:
         message = await interaction.channel.send(embed=embed, view=view)
         main_message_id = message.id
-        await interaction.response.send_message("✅ Sistema RandoChat configurado com sucesso! Canal bloqueado para mensagens comuns.", ephemeral=True)
+        await interaction.response.send_message("✅ Sistema iTinder configurado com sucesso! Canal bloqueado para mensagens comuns.", ephemeral=True)
     except Exception:
         await interaction.response.send_message("❌ Erro ao enviar mensagem de setup", ephemeral=True)
 
@@ -862,7 +862,7 @@ async def on_interaction(interaction: discord.Interaction):
 @bot.event
 async def on_message(message):
     if message.guild and message.guild.id == MINHA_GUILD_ID:
-        # Canal do RandoChat (setup) e canal específico onde aparecem as mensagens de entrada
+        # Canal do iTinder (setup) e canal específico onde aparecem as mensagens de entrada
         canais_para_apagar = [setup_channel_id, 1436733269818343541]
         
         if message.channel.id in canais_para_apagar:
@@ -877,7 +877,7 @@ async def on_message(message):
 
 @bot.event
 async def on_ready():
-    print(f"✅ RandoChat online! Conectado como {bot.user.name}")
+    print(f"✅ iTinder online! Conectado como {bot.user.name}")
     
     guild = discord.Object(id=MINHA_GUILD_ID)
     try:
