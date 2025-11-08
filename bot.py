@@ -714,7 +714,7 @@ class ConversationView(discord.ui.View):
             pass
         
         await asyncio.sleep(2)
-        await encerrar_canal_e_cleanup(self.canal)
+        await encerrar_canal_e_cleanup(canal)
         await interaction.response.send_message("❌ Você recusou a conversa.", ephemeral=True)
 
 class EncerrarView(discord.ui.View):
@@ -784,21 +784,27 @@ async def setupcarente(interaction: discord.Interaction):
         return
     
     embed = discord.Embed(
-        title="🗥️ RandoChat - Sistema de Chat Anônimo",
+        title="💌 RandoChat - Sistema de Chat Anônimo",
         description=(
-            "**Chat 100% anónimo**\n\n"
-            "## PASSO A PASSO:\n"
-            "1. Clique em 🌟 Configurar Perfil  \n"
-            "2. Escolha sua identidade e preferência  \n"
-            "3. Clique em 🌟 Entrar na Fila  \n"
-            "4. Aguarde encontrar alguém compatível  \n"
-            "5. Aceite o chat e converse por 10 minutos!  \n\n"
-            "## ESTE CANAL FOI BLOQUEADO\n"
-            "Apenas os botões abaixo funcionam aqui.\n\n"
-            "**RandoChat - Conectando pessoas anonimamente** 😊️"
+            "**Bem-vindo ao RandoChat!** 🌟\n\n"
+            "🔒 **Sistema totalmente anônimo e seguro**\n\n"
+            "📋 **COMO FUNCIONA:**\n"
+            "• ⏰ **10 minutos** de conversa por par\n"
+            "• ❌ Recusar alguém = **5 minutos** de espera para encontrar a mesma pessoa\n"
+            "• 🔍 Encontre pessoas por preferência\n"
+            "• 💬 Chat 100% anônimo\n\n"
+            "⚙️ **PASSO A PASSO:**\n"
+            "1. Clique em `⚙️ Configurar Perfil`\n"
+            "2. Escolha sua identidade e preferência\n"
+            "3. Clique em `💌 Entrar na Fila`\n"
+            "4. Aguarde encontrar alguém compatível\n"
+            "5. Aceite o chat e converse por 10 minutos!\n\n"
+            "⚠️ **ESTE CANAL FOI BLOQUEADO**\n"
+            "Apenas os botões abaixo funcionam aqui."
         ),
         color=0xFF6B9E
     )
+    embed.set_footer(text="RandoChat - Conectando pessoas anonimamente 💫")
     
     view = TicketView()
     try:
