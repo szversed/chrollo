@@ -30,15 +30,15 @@ main_message_id = None  # ID da mensagem principal fixa
 user_messages = {}  # Dicionário para armazenar a mensagem individual de cada usuário
 
 def get_gender_display(gender):
-    return "🌟 Anónimo" if gender == "homem" else "🌟 Anónima"
+    return "👨🏻 Anônimo" if gender == "homem" else "👩🏻 Anônima"
 
 def get_preference_display(pref):
     if pref == "homem":
-        return "🌟 Anónimos"
+        return "👨🏻 Anônimos"
     elif pref == "mulher":
-        return "🌟 Anónimas"
+        return "👩🏻 Anônimas"
     else:
-        return "🌟 Ambos"
+        return "👨🏻👩🏻 Ambos"
 
 def pair_key(u1_id, u2_id):
     return frozenset({u1_id, u2_id})
@@ -291,25 +291,25 @@ class GenderSetupView(discord.ui.View):
         super().__init__(timeout=None)
         self.setup_message = setup_message
 
-    @discord.ui.button(label="🌟 Anónimo", style=discord.ButtonStyle.primary, custom_id="gender_homem")
+    @discord.ui.button(label="👨🏻 Anônimo", style=discord.ButtonStyle.primary, custom_id="gender_homem")
     async def set_homem(self, interaction: discord.Interaction, button: discord.ui.Button):
         user_genders[interaction.user.id] = "homem"
         
         embed = discord.Embed(
             title="⚙️ Configurar Perfil",
-            description="✅ **Você é:** 🌟 Anónimo\n\nAgora escolha quem você quer encontrar:",
+            description="✅ **Você é:** 👨🏻 Anônimo\n\nAgora escolha quem você quer encontrar:",
             color=0x66FF99
         )
         await self.setup_message.edit(embed=embed, view=PreferenceSetupView(self.setup_message))
         await interaction.response.defer()
 
-    @discord.ui.button(label="🌟 Anónima", style=discord.ButtonStyle.primary, custom_id="gender_mulher")
+    @discord.ui.button(label="👩🏻 Anônima", style=discord.ButtonStyle.primary, custom_id="gender_mulher")
     async def set_mulher(self, interaction: discord.Interaction, button: discord.ui.Button):
         user_genders[interaction.user.id] = "mulher"
         
         embed = discord.Embed(
             title="⚙️ Configurar Perfil",
-            description="✅ **Você é:** 🌟 Anónima\n\nAgora escolha quem você quer encontrar:",
+            description="✅ **Você é:** 👩🏻 Anônima\n\nAgora escolha quem você quer encontrar:",
             color=0x66FF99
         )
         await self.setup_message.edit(embed=embed, view=PreferenceSetupView(self.setup_message))
@@ -320,17 +320,17 @@ class PreferenceSetupView(discord.ui.View):
         super().__init__(timeout=None)
         self.setup_message = setup_message
 
-    @discord.ui.button(label="🌟 Anónimos", style=discord.ButtonStyle.primary, custom_id="pref_homem")
+    @discord.ui.button(label="👨🏻 Anônimos", style=discord.ButtonStyle.primary, custom_id="pref_homem")
     async def pref_homem(self, interaction: discord.Interaction, button: discord.ui.Button):
         user_preferences[interaction.user.id] = "homem"
         await self.finalizar_configuracao(interaction)
 
-    @discord.ui.button(label="🌟 Anónimas", style=discord.ButtonStyle.primary, custom_id="pref_mulher")
+    @discord.ui.button(label="👩🏻 Anônimas", style=discord.ButtonStyle.primary, custom_id="pref_mulher")
     async def pref_mulher(self, interaction: discord.Interaction, button: discord.ui.Button):
         user_preferences[interaction.user.id] = "mulher"
         await self.finalizar_configuracao(interaction)
 
-    @discord.ui.button(label="🌟 Ambos", style=discord.ButtonStyle.primary, custom_id="pref_ambos")
+    @discord.ui.button(label="👨🏻👩🏻 Ambos", style=discord.ButtonStyle.primary, custom_id="pref_ambos")
     async def pref_ambos(self, interaction: discord.Interaction, button: discord.ui.Button):
         user_preferences[interaction.user.id] = "ambos"
         await self.finalizar_configuracao(interaction)
@@ -406,7 +406,7 @@ class IndividualView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="🌟 Entrar na Fila", style=discord.ButtonStyle.success, custom_id="individual_entrar")
+    @discord.ui.button(label="💌 Entrar na Fila", style=discord.ButtonStyle.success, custom_id="individual_entrar")
     async def entrar(self, interaction: discord.Interaction, button: discord.ui.Button):
         user = interaction.user
         
@@ -537,7 +537,7 @@ class TicketView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="🌟 Configurar Perfil", style=discord.ButtonStyle.primary, custom_id="config_gender")
+    @discord.ui.button(label="👨🏻👩🏻 Configurar Perfil", style=discord.ButtonStyle.primary, custom_id="config_gender")
     async def config_gender(self, interaction: discord.Interaction, button: discord.ui.Button):
         # SEMPRE inicia a configuração, mesmo se já tiver perfil
         embed = discord.Embed(
@@ -565,7 +565,7 @@ class TicketView(discord.ui.View):
         )
         await message.edit(embed=embed, view=GenderSetupView(message))
 
-    @discord.ui.button(label="🌟 Entrar na Fila", style=discord.ButtonStyle.success, custom_id="ticket_entrar")
+    @discord.ui.button(label="💌 Entrar na Fila", style=discord.ButtonStyle.success, custom_id="ticket_entrar")
     async def entrar(self, interaction: discord.Interaction, button: discord.ui.Button):
         user = interaction.user
         
@@ -714,7 +714,7 @@ class ConversationView(discord.ui.View):
             pass
         
         await asyncio.sleep(2)
-        await encerrar_canal_e_cleanup(canal)
+        await encerrar_canal_e_cleanup(self.canal)
         await interaction.response.send_message("❌ Você recusou a conversa.", ephemeral=True)
 
 class EncerrarView(discord.ui.View):
