@@ -21,7 +21,7 @@ user_genders = {}
 user_preferences = {}
 PAIR_COOLDOWNS = {}
 PAIR_COOLDOWN_SECONDS = 5 * 60
-ACCEPT_TIMEOUT = 60
+ACCEPT_TIMEOUT = 30  # Mudado para 30 segundos
 CHANNEL_DURATION = 10 * 60
 
 setup_channel_id = None
@@ -30,15 +30,15 @@ main_message_id = None  # ID da mensagem principal fixa
 user_messages = {}  # Dicionário para armazenar a mensagem individual de cada usuário
 
 def get_gender_display(gender):
-    return "👤 Anônimo" if gender == "homem" else "👩 Anônima"
+    return "🌟 Anónimo" if gender == "homem" else "🌟 Anónima"
 
 def get_preference_display(pref):
     if pref == "homem":
-        return "👤 Anônimos"
+        return "🌟 Anónimos"
     elif pref == "mulher":
-        return "👩 Anônimas"
+        return "🌟 Anónimas"
     else:
-        return "💑 Ambos"
+        return "🌟 Ambos"
 
 def pair_key(u1_id, u2_id):
     return frozenset({u1_id, u2_id})
@@ -129,6 +129,20 @@ async def tentar_formar_dupla(guild):
             if not u1 or not u2:
                 continue
             
+            # APAGA as mensagens individuais dos usuários
+            if u1_id in user_messages:
+                try:
+                    await user_messages[u1_id].delete()
+                    del user_messages[u1_id]
+                except:
+                    pass
+            if u2_id in user_messages:
+                try:
+                    await user_messages[u2_id].delete()
+                    del user_messages[u2_id]
+                except:
+                    pass
+            
             nome_canal = gerar_nome_canal(guild)
     
             categoria = discord.utils.get(guild.categories, name="RandoChat")
@@ -177,6 +191,7 @@ async def tentar_formar_dupla(guild):
                     "• Ambos precisam aceitar para começar a conversar\n"
                     "• ⏰ **10 minutos** de conversa após aceitar\n"
                     "• ❌ Se recusar: **5 minutos** de espera para encontrar a mesma pessoa\n"
+                    "• ⏳ **Chat será fechado em 30 segundos se ninguém aceitar**\n"
                     "• 🔒 Chat totalmente anônimo e privado\n\n"
                     "💡 **Dica:** Sejam respeitosos e aproveitem a conversa!"
                 ),
@@ -199,6 +214,7 @@ async def tentar_formar_dupla(guild):
                 "📝 **Lembrete:**\n"
                 "• ⏰ 10 minutos de conversa\n"
                 "• ❌ Recusar = 5 minutos de espera\n"
+                "• ⏳ **Aceite em 30 segundos ou o chat será fechado**\n"
                 "• 💬 Chat anônimo e seguro"
             )
             try:
@@ -232,8 +248,9 @@ async def _accept_timeout_handler(canal, timeout=ACCEPT_TIMEOUT):
                 embed = discord.Embed(
                     title="⏰ Tempo Esgotado",
                     description=(
-                        "O tempo para aceitar expirou.\n\n"
-                        "⚠️ **Atenção:** Se você recusar alguém, só poderá encontrar a mesma pessoa novamente após **5 minutos**."
+                        "O tempo para aceitar expirou (30 segundos).\n\n"
+                        "⚠️ **Nenhum dos dois aceitou a conversa a tempo.**\n"
+                        "💫 Volte ao canal principal para tentar novamente!"
                     ),
                     color=0xFF9999
                 )
@@ -274,25 +291,25 @@ class GenderSetupView(discord.ui.View):
         super().__init__(timeout=None)
         self.setup_message = setup_message
 
-    @discord.ui.button(label="👤 Anônimo", style=discord.ButtonStyle.primary, custom_id="gender_homem")
+    @discord.ui.button(label="🌟 Anónimo", style=discord.ButtonStyle.primary, custom_id="gender_homem")
     async def set_homem(self, interaction: discord.Interaction, button: discord.ui.Button):
         user_genders[interaction.user.id] = "homem"
         
         embed = discord.Embed(
             title="⚙️ Configurar Perfil",
-            description="✅ **Você é:** 👤 Anônimo\n\nAgora escolha quem você quer encontrar:",
+            description="✅ **Você é:** 🌟 Anónimo\n\nAgora escolha quem você quer encontrar:",
             color=0x66FF99
         )
         await self.setup_message.edit(embed=embed, view=PreferenceSetupView(self.setup_message))
         await interaction.response.defer()
 
-    @discord.ui.button(label="👩 Anônima", style=discord.ButtonStyle.primary, custom_id="gender_mulher")
+    @discord.ui.button(label="🌟 Anónima", style=discord.ButtonStyle.primary, custom_id="gender_mulher")
     async def set_mulher(self, interaction: discord.Interaction, button: discord.ui.Button):
         user_genders[interaction.user.id] = "mulher"
         
         embed = discord.Embed(
             title="⚙️ Configurar Perfil",
-            description="✅ **Você é:** 👩 Anônima\n\nAgora escolha quem você quer encontrar:",
+            description="✅ **Você é:** 🌟 Anónima\n\nAgora escolha quem você quer encontrar:",
             color=0x66FF99
         )
         await self.setup_message.edit(embed=embed, view=PreferenceSetupView(self.setup_message))
@@ -303,17 +320,17 @@ class PreferenceSetupView(discord.ui.View):
         super().__init__(timeout=None)
         self.setup_message = setup_message
 
-    @discord.ui.button(label="👤 Anônimos", style=discord.ButtonStyle.primary, custom_id="pref_homem")
+    @discord.ui.button(label="🌟 Anónimos", style=discord.ButtonStyle.primary, custom_id="pref_homem")
     async def pref_homem(self, interaction: discord.Interaction, button: discord.ui.Button):
         user_preferences[interaction.user.id] = "homem"
         await self.finalizar_configuracao(interaction)
 
-    @discord.ui.button(label="👩 Anônimas", style=discord.ButtonStyle.primary, custom_id="pref_mulher")
+    @discord.ui.button(label="🌟 Anónimas", style=discord.ButtonStyle.primary, custom_id="pref_mulher")
     async def pref_mulher(self, interaction: discord.Interaction, button: discord.ui.Button):
         user_preferences[interaction.user.id] = "mulher"
         await self.finalizar_configuracao(interaction)
 
-    @discord.ui.button(label="💑 Ambos", style=discord.ButtonStyle.primary, custom_id="pref_ambos")
+    @discord.ui.button(label="🌟 Ambos", style=discord.ButtonStyle.primary, custom_id="pref_ambos")
     async def pref_ambos(self, interaction: discord.Interaction, button: discord.ui.Button):
         user_preferences[interaction.user.id] = "ambos"
         await self.finalizar_configuracao(interaction)
@@ -384,12 +401,12 @@ class LeaveQueueView(discord.ui.View):
         else:
             await interaction.response.send_message("❌ Você não estava na fila.", ephemeral=True)
 
-# NOVA VIEW: Para o embed individual do usuário (SEM botão de Configurar Perfil)
+# VIEW para o embed individual do usuário (SEM botão de Configurar Perfil)
 class IndividualView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="💌 Entrar na Fila", style=discord.ButtonStyle.success, custom_id="individual_entrar")
+    @discord.ui.button(label="🌟 Entrar na Fila", style=discord.ButtonStyle.success, custom_id="individual_entrar")
     async def entrar(self, interaction: discord.Interaction, button: discord.ui.Button):
         user = interaction.user
         
@@ -520,7 +537,7 @@ class TicketView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="⚙️ Configurar Perfil", style=discord.ButtonStyle.primary, custom_id="config_gender")
+    @discord.ui.button(label="🌟 Configurar Perfil", style=discord.ButtonStyle.primary, custom_id="config_gender")
     async def config_gender(self, interaction: discord.Interaction, button: discord.ui.Button):
         # SEMPRE inicia a configuração, mesmo se já tiver perfil
         embed = discord.Embed(
@@ -548,7 +565,7 @@ class TicketView(discord.ui.View):
         )
         await message.edit(embed=embed, view=GenderSetupView(message))
 
-    @discord.ui.button(label="💌 Entrar na Fila", style=discord.ButtonStyle.success, custom_id="ticket_entrar")
+    @discord.ui.button(label="🌟 Entrar na Fila", style=discord.ButtonStyle.success, custom_id="ticket_entrar")
     async def entrar(self, interaction: discord.Interaction, button: discord.ui.Button):
         user = interaction.user
         
@@ -624,12 +641,14 @@ class ConversationView(discord.ui.View):
         
         try:
             msg = await self.canal.fetch_message(self.message_id)
+            # MUDADO: Em vez de ❌, usar ⏳ para mostrar que está aguardando
             embed = discord.Embed(
                 title="💌 RandoChat - Confirmação",
                 description=(
-                    f"{self.u1.mention} {'✅' if self.u1.id in accepted else '❌'}\n"
-                    f"{self.u2.mention} {'✅' if self.u2.id in accepted else '❌'}\n\n"
+                    f"{self.u1.mention} {'✅' if self.u1.id in accepted else '⏳'}\n"
+                    f"{self.u2.mention} {'✅' if self.u2.id in accepted else '⏳'}\n\n"
                     "⏰ **Aguardando ambos aceitarem...**\n"
+                    "⏳ **Chat será fechado em 30 segundos se ninguém aceitar**\n"
                     "💡 **Lembrete:** 10 minutos de conversa após aceitar"
                 ),
                 color=0xFF6B9E
@@ -765,27 +784,21 @@ async def setupcarente(interaction: discord.Interaction):
         return
     
     embed = discord.Embed(
-        title="💌 RandoChat - Sistema de Chat Anônimo",
+        title="🗥️ RandoChat - Sistema de Chat Anônimo",
         description=(
-            "**Bem-vindo ao RandoChat!** 🌟\n\n"
-            "🔒 **Sistema totalmente anônimo e seguro**\n\n"
-            "📋 **COMO FUNCIONA:**\n"
-            "• ⏰ **10 minutos** de conversa por par\n"
-            "• ❌ Recusar alguém = **5 minutos** de espera para encontrar a mesma pessoa\n"
-            "• 🔍 Encontre pessoas por preferência\n"
-            "• 💬 Chat 100% anônimo\n\n"
-            "⚙️ **PASSO A PASSO:**\n"
-            "1. Clique em `⚙️ Configurar Perfil`\n"
-            "2. Escolha sua identidade e preferência\n"
-            "3. Clique em `💌 Entrar na Fila`\n"
-            "4. Aguarde encontrar alguém compatível\n"
-            "5. Aceite o chat e converse por 10 minutos!\n\n"
-            "⚠️ **ESTE CANAL FOI BLOQUEADO**\n"
-            "Apenas os botões abaixo funcionam aqui."
+            "**Chat 100% anónimo**\n\n"
+            "## PASSO A PASSO:\n"
+            "1. Clique em 🌟 Configurar Perfil  \n"
+            "2. Escolha sua identidade e preferência  \n"
+            "3. Clique em 🌟 Entrar na Fila  \n"
+            "4. Aguarde encontrar alguém compatível  \n"
+            "5. Aceite o chat e converse por 10 minutos!  \n\n"
+            "## ESTE CANAL FOI BLOQUEADO\n"
+            "Apenas os botões abaixo funcionam aqui.\n\n"
+            "**RandoChat - Conectando pessoas anonimamente** 😊️"
         ),
         color=0xFF6B9E
     )
-    embed.set_footer(text="RandoChat - Conectando pessoas anonimamente 💫")
     
     view = TicketView()
     try:
@@ -794,6 +807,18 @@ async def setupcarente(interaction: discord.Interaction):
         await interaction.response.send_message("✅ Sistema RandoChat configurado com sucesso! Canal bloqueado para mensagens comuns.", ephemeral=True)
     except Exception:
         await interaction.response.send_message("❌ Erro ao enviar mensagem de setup", ephemeral=True)
+
+# EVENTO: Quando uma mensagem é enviada no canal - APAGA mensagens de usuários
+@bot.event
+async def on_message(message):
+    if message.guild and message.guild.id == MINHA_GUILD_ID:
+        if message.channel.id == setup_channel_id:
+            if message.author != bot.user and not message.author.guild_permissions.administrator:
+                try:
+                    await message.delete()
+                except:
+                    pass
+    await bot.process_commands(message)
 
 # EVENTO: Quando um membro entra no servidor - NÃO FAZ NADA
 @bot.event
