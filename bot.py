@@ -28,7 +28,15 @@ setup_channel_id = None
 canal_bloqueado = False
 
 def get_gender_display(gender):
-    return "Anônimo" if gender == "homem" else "Anônima"
+    return "👤 Anônimo" if gender == "homem" else "👩 Anônima"
+
+def get_preference_display(pref):
+    if pref == "homem":
+        return "👤 Anônimos"
+    elif pref == "mulher":
+        return "👩 Anônimas"
+    else:
+        return "💑 Ambos"
 
 def pair_key(u1_id, u2_id):
     return frozenset({u1_id, u2_id})
@@ -260,98 +268,86 @@ async def _auto_close_channel_after(canal, segundos=CHANNEL_DURATION):
         pass
 
 class GenderSetupView(discord.ui.View):
-    def __init__(self):
+    def __init__(self, original_interaction):
         super().__init__(timeout=None)
+        self.original_interaction = original_interaction
 
     @discord.ui.button(label="👤 Anônimo", style=discord.ButtonStyle.primary, custom_id="gender_homem")
     async def set_homem(self, interaction: discord.Interaction, button: discord.ui.Button):
         user_genders[interaction.user.id] = "homem"
+        
         embed = discord.Embed(
             title="⚙️ Configurar Perfil",
             description="✅ **Você é:** 👤 Anônimo\n\nAgora escolha quem você quer encontrar:",
             color=0x66FF99
         )
-        await interaction.response.send_message(embed=embed, view=PreferenceSetupView(), ephemeral=True)
+        await interaction.response.edit_message(embed=embed, view=PreferenceSetupView(self.original_interaction))
 
     @discord.ui.button(label="👩 Anônima", style=discord.ButtonStyle.primary, custom_id="gender_mulher")
     async def set_mulher(self, interaction: discord.Interaction, button: discord.ui.Button):
         user_genders[interaction.user.id] = "mulher"
+        
         embed = discord.Embed(
             title="⚙️ Configurar Perfil",
             description="✅ **Você é:** 👩 Anônima\n\nAgora escolha quem você quer encontrar:",
             color=0x66FF99
         )
-        await interaction.response.send_message(embed=embed, view=PreferenceSetupView(), ephemeral=True)
+        await interaction.response.edit_message(embed=embed, view=PreferenceSetupView(self.original_interaction))
 
 class PreferenceSetupView(discord.ui.View):
-    def __init__(self):
+    def __init__(self, original_interaction):
         super().__init__(timeout=None)
+        self.original_interaction = original_interaction
 
     @discord.ui.button(label="👤 Anônimos", style=discord.ButtonStyle.primary, custom_id="pref_homem")
     async def pref_homem(self, interaction: discord.Interaction, button: discord.ui.Button):
         user_preferences[interaction.user.id] = "homem"
-        gender = user_genders.get(interaction.user.id, "homem")
-        gender_display = get_gender_display(gender)
-        
-        embed = discord.Embed(
-            title="🎯 Perfil Configurado!",
-            description=(
-                f"**✅ Seu perfil está pronto!**\n\n"
-                f"**Você:** {gender_display}\n"
-                f"**Procurando:** 👤 Anônimos\n\n"
-                "📋 **Regras do RandoChat:**\n"
-                "• ⏰ **10 minutos** por conversa\n"
-                "• ❌ Recusar = **5 minutos** de espera\n"
-                "• 🔒 Totalmente anônimo\n"
-                "• 💌 Seja respeitoso"
-            ),
-            color=0x66FF99
-        )
-        await interaction.response.send_message(embed=embed, view=TicketView(), ephemeral=True)
+        await self.finalizar_configuracao(interaction)
 
     @discord.ui.button(label="👩 Anônimas", style=discord.ButtonStyle.primary, custom_id="pref_mulher")
     async def pref_mulher(self, interaction: discord.Interaction, button: discord.ui.Button):
         user_preferences[interaction.user.id] = "mulher"
-        gender = user_genders.get(interaction.user.id, "homem")
-        gender_display = get_gender_display(gender)
-        
-        embed = discord.Embed(
-            title="🎯 Perfil Configurado!",
-            description=(
-                f"**✅ Seu perfil está pronto!**\n\n"
-                f"**Você:** {gender_display}\n"
-                f"**Procurando:** 👩 Anônimas\n\n"
-                "📋 **Regras do RandoChat:**\n"
-                "• ⏰ **10 minutos** por conversa\n"
-                "• ❌ Recusar = **5 minutos** de espera\n"
-                "• 🔒 Totalmente anônimo\n"
-                "• 💌 Seja respeitoso"
-            ),
-            color=0x66FF99
-        )
-        await interaction.response.send_message(embed=embed, view=TicketView(), ephemeral=True)
+        await self.finalizar_configuracao(interaction)
 
     @discord.ui.button(label="💑 Ambos", style=discord.ButtonStyle.primary, custom_id="pref_ambos")
     async def pref_ambos(self, interaction: discord.Interaction, button: discord.ui.Button):
         user_preferences[interaction.user.id] = "ambos"
+        await self.finalizar_configuracao(interaction)
+
+    async def finalizar_configuracao(self, interaction: discord.Interaction):
         gender = user_genders.get(interaction.user.id, "homem")
-        gender_display = get_gender_display(gender)
+        preference = user_preferences.get(interaction.user.id, "ambos")
         
-        embed = discord.Embed(
-            title="🎯 Perfil Configurado!",
-            description=(
-                f"**✅ Seu perfil está pronto!**\n\n"
-                f"**Você:** {gender_display}\n"
-                f"**Procurando:** 💑 Ambos\n\n"
-                "📋 **Regras do RandoChat:**\n"
-                "• ⏰ **10 minutos** por conversa\n"
-                "• ❌ Recusar = **5 minutos** de espera\n"
-                "• 🔒 Totalmente anônimo\n"
-                "• 💌 Seja respeitoso"
-            ),
-            color=0x66FF99
+        gender_display = get_gender_display(gender)
+        preference_display = get_preference_display(preference)
+        
+        # Fecha a mensagem de configuração (ephemeral)
+        await interaction.response.edit_message(
+            content="✅ **Perfil configurado com sucesso!**",
+            embed=None,
+            view=None,
+            delete_after=2
         )
-        await interaction.response.send_message(embed=embed, view=TicketView(), ephemeral=True)
+        
+        # Atualiza a mensagem principal para o usuário
+        embed = discord.Embed(
+            title="💌 RandoChat - Sistema de Chat Anônimo",
+            description=(
+                f"**✅ Seu perfil está configurado!**\n\n"
+                f"**Você:** {gender_display}\n"
+                f"**Procurando:** {preference_display}\n\n"
+                "📋 **COMO FUNCIONA:**\n"
+                "• ⏰ **10 minutos** de conversa por par\n"
+                "• ❌ Recusar alguém = **5 minutos** de espera\n"
+                "• 🔍 Encontre pessoas por preferência\n"
+                "• 💬 Chat 100% anônimo\n\n"
+                "💡 **Clique no botão abaixo para entrar na fila!**"
+            ),
+            color=0xFF6B9E
+        )
+        
+        # Envia uma nova mensagem principal atualizada (só para este usuário)
+        await self.original_interaction.followup.send(embed=embed, view=TicketView(), ephemeral=True)
 
 class LeaveQueueView(discord.ui.View):
     def __init__(self, user_id):
@@ -372,16 +368,16 @@ class LeaveQueueView(discord.ui.View):
         
         if removed:
             embed = discord.Embed(
-                title="🎯 Perfil Configurado!",
+                title="💌 RandoChat - Sistema de Chat Anônimo",
                 description=(
                     f"**✅ Você saiu da fila!**\n\n"
                     f"**Seu perfil:** {get_gender_display(user_genders.get(interaction.user.id, 'homem'))}\n"
-                    f"**Procurando:** {user_preferences.get(interaction.user.id, 'ambos')}\n\n"
+                    f"**Procurando:** {get_preference_display(user_preferences.get(interaction.user.id, 'ambos'))}\n\n"
                     "💡 Clique em **💌 Entrar na Fila** para voltar a procurar!"
                 ),
                 color=0xFF9999
             )
-            await interaction.response.send_message(embed=embed, view=TicketView(), ephemeral=True)
+            await interaction.response.edit_message(embed=embed, view=TicketView())
         else:
             await interaction.response.send_message("❌ Você não estava na fila.", ephemeral=True)
 
@@ -396,7 +392,7 @@ class TicketView(discord.ui.View):
             description="👥 **Escolha como você se identifica:**",
             color=0x66FF99
         )
-        await interaction.response.send_message(embed=embed, view=GenderSetupView(), ephemeral=True)
+        await interaction.response.send_message(embed=embed, view=GenderSetupView(interaction), ephemeral=True)
 
     @discord.ui.button(label="💌 Entrar na Fila", style=discord.ButtonStyle.success, custom_id="ticket_entrar")
     async def entrar(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -413,31 +409,31 @@ class TicketView(discord.ui.View):
 
         if user.id in active_users:
             embed = discord.Embed(
-                title="🎯 Perfil Configurado!",
+                title="💌 RandoChat - Sistema de Chat Anônimo",
                 description=(
                     f"**💬 Você já está em um chat ativo!**\n\n"
                     f"**Seu perfil:** {get_gender_display(user_genders[user.id])}\n"
-                    f"**Procurando:** {user_preferences[user.id]}\n\n"
+                    f"**Procurando:** {get_preference_display(user_preferences[user.id])}\n\n"
                     "Aguarde o chat atual terminar para entrar na fila novamente."
                 ),
                 color=0xFF9999
             )
-            await interaction.response.send_message(embed=embed, view=TicketView(), ephemeral=True)
+            await interaction.response.edit_message(embed=embed, view=TicketView())
             return
         
         for entry in fila_carentes:
             if entry["user_id"] == user.id:
                 embed = discord.Embed(
-                    title="🎯 Perfil Configurado!",
+                    title="💌 RandoChat - Sistema de Chat Anônimo",
                     description=(
                         f"**⏳ Você já está na fila!**\n\n"
                         f"**Seu perfil:** {get_gender_display(user_genders[user.id])}\n"
-                        f"**Procurando:** {user_preferences[user.id]}\n\n"
+                        f"**Procurando:** {get_preference_display(user_preferences[user.id])}\n\n"
                         "Aguarde enquanto encontramos alguém compatível..."
                     ),
                     color=0x66FF99
                 )
-                await interaction.response.send_message(embed=embed, view=LeaveQueueView(user.id), ephemeral=True)
+                await interaction.response.edit_message(embed=embed, view=LeaveQueueView(user.id))
                 return
 
         fila_entry = {
@@ -448,13 +444,14 @@ class TicketView(discord.ui.View):
         fila_carentes.append(fila_entry)
         
         gender_display = get_gender_display(user_genders[user.id])
+        preference_display = get_preference_display(user_preferences[user.id])
         
         embed = discord.Embed(
-            title="🎯 Perfil Configurado!",
+            title="💌 RandoChat - Sistema de Chat Anônimo",
             description=(
                 f"**✅ Entrou na Fila!**\n\n"
                 f"**Seu perfil:** {gender_display}\n"
-                f"**Procurando:** {user_preferences[user.id]}\n\n"
+                f"**Procurando:** {preference_display}\n\n"
                 "🔍 **Procurando alguém compatível...**\n\n"
                 "📝 **Lembretes:**\n"
                 "• ⏰ 10 minutos de conversa\n"
@@ -463,7 +460,7 @@ class TicketView(discord.ui.View):
             ),
             color=0x66FF99
         )
-        await interaction.response.send_message(embed=embed, view=LeaveQueueView(user.id), ephemeral=True)
+        await interaction.response.edit_message(embed=embed, view=LeaveQueueView(user.id))
         await tentar_formar_dupla(interaction.guild)
 
 class ConversationView(discord.ui.View):
