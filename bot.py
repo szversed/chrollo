@@ -373,77 +373,49 @@ class LeaveQueueView(discord.ui.View):
                         f"**🚪 Você saiu da fila!**\n\n"
                         f"**Seu perfil:** {get_gender_display(user_genders.get(user_id, 'homem'))}\n"
                         f"**Procurando:** {get_preference_display(user_preferences.get(user_id, 'ambos'))}\n\n"
-                        "💡 Clique em **💌 Entrar na Fila** para voltar a procurar!"
+                        "💡 Volte ao canal principal para configurar perfil ou entrar na fila novamente!"
                     ),
                     color=0xFF9999
                 )
-                await user_messages[user_id].edit(embed=embed, view=TicketView())
+                await user_messages[user_id].edit(embed=embed, view=IndividualView())
                 await interaction.response.defer()
             else:
                 await interaction.response.send_message("❌ Mensagem não encontrada.", ephemeral=True)
         else:
             await interaction.response.send_message("❌ Você não estava na fila.", ephemeral=True)
 
-class TicketView(discord.ui.View):
+# NOVA VIEW: Para o embed individual do usuário (SEM botão de Configurar Perfil)
+class IndividualView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="⚙️ Configurar Perfil", style=discord.ButtonStyle.primary, custom_id="config_gender")
-    async def config_gender(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # SEMPRE inicia a configuração, mesmo se já tiver perfil
-        embed = discord.Embed(
-            title="⚙️ Configurar Perfil",
-            description="👥 **Escolha como você se identifica:**",
-            color=0x66FF99
-        )
-        
-        # Envia uma NOVA mensagem individual para o usuário (apenas para configuração)
-        setup_message = await interaction.response.send_message(
-            embed=embed, 
-            view=GenderSetupView(None),
-            ephemeral=True
-        )
-        
-        if hasattr(setup_message, 'message'):
-            message = setup_message.message
-        else:
-            message = await interaction.original_response()
-        
-        embed = discord.Embed(
-            title="⚙️ Configurar Perfil",
-            description="👥 **Escolha como você se identifica:**",
-            color=0x66FF99
-        )
-        await message.edit(embed=embed, view=GenderSetupView(message))
-
-    @discord.ui.button(label="💌 Entrar na Fila", style=discord.ButtonStyle.success, custom_id="ticket_entrar")
+    @discord.ui.button(label="💌 Entrar na Fila", style=discord.ButtonStyle.success, custom_id="individual_entrar")
     async def entrar(self, interaction: discord.Interaction, button: discord.ui.Button):
         user = interaction.user
         
         if user.id not in user_genders or user.id not in user_preferences:
             # Se não tem perfil, mostra mensagem na MESMA mensagem individual
             embed_explicacao = discord.Embed(
-                title="💌 RandoChat - Sistema de Chat Anônimo",
+                title="💌 RandoChat - Configure seu Perfil",
                 description=(
-                    "**Bem-vindo ao RandoChat!** 🌟\n\n"
-                    "🔒 **Sistema totalmente anônimo e seguro**\n\n"
+                    "❌ **Você precisa configurar seu perfil primeiro!**\n\n"
                     "📋 **COMO FUNCIONA:**\n"
                     "• ⏰ **10 minutos** de conversa por par\n"
                     "• ❌ Recusar alguém = **5 minutos** de espera\n"
                     "• 🔍 Encontre pessoas por preferência\n"
                     "• 💬 Chat 100% anônimo\n\n"
-                    "⚙️ **Configure seu perfil primeiro!**"
+                    "⚙️ **Volte ao canal principal e clique em `Configurar Perfil`!**"
                 ),
                 color=0xFF6B9E
             )
             
             # Se já existe uma mensagem individual, atualiza ela
             if user.id in user_messages:
-                await user_messages[user.id].edit(embed=embed_explicacao, view=TicketView())
+                await user_messages[user.id].edit(embed=embed_explicacao, view=IndividualView())
                 await interaction.response.defer()
             else:
                 # Se não existe, cria uma nova mensagem individual
-                message = await interaction.response.send_message(embed=embed_explicacao, view=TicketView(), ephemeral=True)
+                message = await interaction.response.send_message(embed=embed_explicacao, view=IndividualView(), ephemeral=True)
                 if hasattr(message, 'message'):
                     user_messages[user.id] = message.message
                 else:
@@ -455,7 +427,7 @@ class TicketView(discord.ui.View):
             preference_display = get_preference_display(user_preferences[user.id])
             
             embed = discord.Embed(
-                title="💌 RandoChat - Perfil Configurado!",
+                title="💌 RandoChat - Chat Ativo",
                 description=(
                     f"**💬 Você já está em um chat ativo!**\n\n"
                     f"**Seu perfil:** {gender_display}\n"
@@ -467,10 +439,10 @@ class TicketView(discord.ui.View):
             
             # Atualiza a MESMA mensagem individual
             if user.id in user_messages:
-                await user_messages[user.id].edit(embed=embed, view=TicketView())
+                await user_messages[user.id].edit(embed=embed, view=IndividualView())
                 await interaction.response.defer()
             else:
-                message = await interaction.response.send_message(embed=embed, view=TicketView(), ephemeral=True)
+                message = await interaction.response.send_message(embed=embed, view=IndividualView(), ephemeral=True)
                 if hasattr(message, 'message'):
                     user_messages[user.id] = message.message
                 else:
@@ -483,7 +455,7 @@ class TicketView(discord.ui.View):
                 preference_display = get_preference_display(user_preferences[user.id])
                 
                 embed = discord.Embed(
-                    title="💌 RandoChat - Perfil Configurado!",
+                    title="💌 RandoChat - Na Fila",
                     description=(
                         f"**⏳ Você já está na fila!**\n\n"
                         f"**Seu perfil:** {gender_display}\n"
@@ -516,7 +488,7 @@ class TicketView(discord.ui.View):
         preference_display = get_preference_display(user_preferences[user.id])
         
         embed = discord.Embed(
-            title="💌 RandoChat - Perfil Configurado!",
+            title="💌 RandoChat - Entrou na Fila",
             description=(
                 f"**✅ Entrou na Fila!**\n\n"
                 f"**Seu perfil:** {gender_display}\n"
@@ -542,6 +514,89 @@ class TicketView(discord.ui.View):
                 user_messages[user.id] = await interaction.original_response()
         
         await tentar_formar_dupla(interaction.guild)
+
+# VIEW PRINCIPAL: Para o embed principal (COM botão de Configurar Perfil)
+class TicketView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="⚙️ Configurar Perfil", style=discord.ButtonStyle.primary, custom_id="config_gender")
+    async def config_gender(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # SEMPRE inicia a configuração, mesmo se já tiver perfil
+        embed = discord.Embed(
+            title="⚙️ Configurar Perfil",
+            description="👥 **Escolha como você se identifica:**",
+            color=0x66FF99
+        )
+        
+        # Envia uma mensagem ephemeral para configuração
+        setup_message = await interaction.response.send_message(
+            embed=embed, 
+            view=GenderSetupView(None),
+            ephemeral=True
+        )
+        
+        if hasattr(setup_message, 'message'):
+            message = setup_message.message
+        else:
+            message = await interaction.original_response()
+        
+        embed = discord.Embed(
+            title="⚙️ Configurar Perfil",
+            description="👥 **Escolha como você se identifica:**",
+            color=0x66FF99
+        )
+        await message.edit(embed=embed, view=GenderSetupView(message))
+
+    @discord.ui.button(label="💌 Entrar na Fila", style=discord.ButtonStyle.success, custom_id="ticket_entrar")
+    async def entrar(self, interaction: discord.Interaction, button: discord.ui.Button):
+        user = interaction.user
+        
+        if user.id not in user_genders or user.id not in user_preferences:
+            # Se não tem perfil, cria o embed individual
+            embed_explicacao = discord.Embed(
+                title="💌 RandoChat - Configure seu Perfil",
+                description=(
+                    "❌ **Você precisa configurar seu perfil primeiro!**\n\n"
+                    "📋 **COMO FUNCIONA:**\n"
+                    "• ⏰ **10 minutos** de conversa por par\n"
+                    "• ❌ Recusar alguém = **5 minutos** de espera\n"
+                    "• 🔍 Encontre pessoas por preferência\n"
+                    "• 💬 Chat 100% anônimo\n\n"
+                    "⚙️ **Clique em `Configurar Perfil` no canal principal!**"
+                ),
+                color=0xFF6B9E
+            )
+            
+            # Cria uma nova mensagem individual
+            message = await interaction.response.send_message(embed=embed_explicacao, view=IndividualView(), ephemeral=True)
+            if hasattr(message, 'message'):
+                user_messages[user.id] = message.message
+            else:
+                user_messages[user.id] = await interaction.original_response()
+            return
+
+        # Se tem perfil, cria o embed individual para entrar na fila
+        gender_display = get_gender_display(user_genders[user.id])
+        preference_display = get_preference_display(user_preferences[user.id])
+        
+        embed_inicial = discord.Embed(
+            title="💌 RandoChat - Pronto para Conversar",
+            description=(
+                f"**✅ Perfil Configurado!**\n\n"
+                f"**Seu perfil:** {gender_display}\n"
+                f"**Procurando:** {preference_display}\n\n"
+                "💡 Clique em **Entrar na Fila** para começar a procurar!"
+            ),
+            color=0x66FF99
+        )
+        
+        # Cria uma nova mensagem individual
+        message = await interaction.response.send_message(embed=embed_inicial, view=IndividualView(), ephemeral=True)
+        if hasattr(message, 'message'):
+            user_messages[user.id] = message.message
+        else:
+            user_messages[user.id] = await interaction.original_response()
 
 class ConversationView(discord.ui.View):
     def __init__(self, canal, u1, u2, message_id):
