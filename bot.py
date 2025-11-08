@@ -708,9 +708,15 @@ async def on_interaction(interaction: discord.Interaction):
 @bot.event
 async def on_ready():
     print(f"✅ RandoChat online! Conectado como {bot.user.name}")
+    
+    guild = discord.Object(id=MINHA_GUILD_ID)
     try:
-        await bot.tree.sync()
-        print("✅ Comandos sincronizados!")
+        bot.tree.copy_global_to(guild=guild)
+        await bot.tree.sync(guild=guild)
+        print("✅ Comandos sincronizados na guild!")
+        
+        commands = await bot.tree.fetch_commands(guild=guild)
+        print(f"✅ Comandos disponíveis: {[cmd.name for cmd in commands]}")
     except Exception as e:
         print(f"⚠️ Erro ao sincronizar comandos: {e}")
 
