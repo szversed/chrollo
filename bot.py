@@ -328,25 +328,22 @@ class PreferenceSetupView(discord.ui.View):
         # Apaga a mensagem de configuração ephemeral
         await self.setup_message.delete()
         
-        # Envia uma NOVA mensagem principal personalizada para o usuário
-        embed_personalizado = discord.Embed(
-            title="💌 RandoChat - Perfil Configurado!",
+        # Envia uma mensagem temporária que será apagada após 5 segundos
+        embed_explicacao = discord.Embed(
+            title="⚙️ Configuração Concluída",
             description=(
-                f"**✅ Seu perfil está configurado!**\n\n"
+                f"✅ **Perfil configurado com sucesso!**\n\n"
                 f"**Você:** {gender_display}\n"
                 f"**Procurando:** {preference_display}\n\n"
-                "📋 **COMO FUNCIONA:**\n"
-                "• ⏰ **10 minutos** de conversa por par\n"
-                "• ❌ Recusar alguém = **5 minutos** de espera\n"
-                "• 🔍 Encontre pessoas por preferência\n"
-                "• 💬 Chat 100% anônimo\n\n"
-                "💡 **Clique no botão abaixo para entrar na fila!**"
+                "💡 Agora você pode entrar na fila para encontrar alguém!"
             ),
-            color=0xFF6B9E
+            color=0x66FF99
         )
         
-        # Envia uma NOVA mensagem com o perfil configurado (não ephemeral, mas só o usuário vê)
-        await interaction.response.send_message(embed=embed_personalizado, view=TicketView(), ephemeral=True)
+        # Envia a mensagem e agenda para apagar após 5 segundos
+        await interaction.response.send_message(embed=embed_explicacao, ephemeral=True)
+        await asyncio.sleep(5)
+        await interaction.delete_original_response()
 
 class LeaveQueueView(discord.ui.View):
     def __init__(self, user_id):
@@ -367,9 +364,9 @@ class LeaveQueueView(discord.ui.View):
         
         if removed:
             embed = discord.Embed(
-                title="💌 RandoChat - Perfil Configurado!",
+                title="💌 RandoChat - Saiu da Fila",
                 description=(
-                    f"**✅ Você saiu da fila!**\n\n"
+                    f"**🚪 Você saiu da fila!**\n\n"
                     f"**Seu perfil:** {get_gender_display(user_genders.get(interaction.user.id, 'homem'))}\n"
                     f"**Procurando:** {get_preference_display(user_preferences.get(interaction.user.id, 'ambos'))}\n\n"
                     "💡 Clique em **💌 Entrar na Fila** para voltar a procurar!"
@@ -492,7 +489,7 @@ class TicketView(discord.ui.View):
                     ),
                     color=0x66FF99
                 )
-                await interaction.response.send_message(embed=embed, view=LeaveQueueView(user.id), ephemeral=True)
+                await interaction.response.edit_message(embed=embed, view=LeaveQueueView(user.id))
                 return
 
         fila_entry = {
@@ -519,10 +516,8 @@ class TicketView(discord.ui.View):
             ),
             color=0x66FF99
         )
-        await interaction.response.send_message(embed=embed, view=LeaveQueueView(user.id), ephemeral=True)
+        await interaction.response.edit_message(embed=embed, view=LeaveQueueView(user.id))
         await tentar_formar_dupla(interaction.guild)
-
-# ... (resto do código permanece igual: ConversationView, EncerrarView, etc.)
 
 class ConversationView(discord.ui.View):
     def __init__(self, canal, u1, u2, message_id):
@@ -720,8 +715,6 @@ async def setupcarente(interaction: discord.Interaction):
         await interaction.response.send_message("✅ Sistema RandoChat configurado com sucesso! Canal bloqueado para mensagens comuns.", ephemeral=True)
     except Exception:
         await interaction.response.send_message("❌ Erro ao enviar mensagem de setup", ephemeral=True)
-
-# ... (resto do código permanece igual)
 
 @bot.event
 async def on_guild_channel_delete(channel):
