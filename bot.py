@@ -383,33 +383,7 @@ class TicketView(discord.ui.View):
 
     @discord.ui.button(label="⚙️ Configurar Perfil", style=discord.ButtonStyle.primary, custom_id="config_gender")
     async def config_gender(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Verifica se o usuário já tem perfil configurado
-        if interaction.user.id in user_genders and interaction.user.id in user_preferences:
-            # Se já tem perfil, mostra a mensagem personalizada
-            gender = user_genders[interaction.user.id]
-            preference = user_preferences[interaction.user.id]
-            gender_display = get_gender_display(gender)
-            preference_display = get_preference_display(preference)
-            
-            embed_personalizado = discord.Embed(
-                title="💌 RandoChat - Perfil Configurado!",
-                description=(
-                    f"**✅ Seu perfil está configurado!**\n\n"
-                    f"**Você:** {gender_display}\n"
-                    f"**Procurando:** {preference_display}\n\n"
-                    "📋 **COMO FUNCIONA:**\n"
-                    "• ⏰ **10 minutos** de conversa por par\n"
-                    "• ❌ Recusar alguém = **5 minutos** de espera\n"
-                    "• 🔍 Encontre pessoas por preferência\n"
-                    "• 💬 Chat 100% anônimo\n\n"
-                    "💡 **Clique no botão abaixo para entrar na fila!**"
-                ),
-                color=0xFF6B9E
-            )
-            await interaction.response.send_message(embed=embed_personalizado, view=TicketView(), ephemeral=True)
-            return
-        
-        # Se não tem perfil, inicia a configuração
+        # SEMPRE inicia a configuração, mesmo se já tiver perfil
         embed = discord.Embed(
             title="⚙️ Configurar Perfil",
             description="👥 **Escolha como você se identifica:**",
