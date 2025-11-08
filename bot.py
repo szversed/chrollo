@@ -27,6 +27,7 @@ CHANNEL_DURATION = 10 * 60
 setup_channel_id = None
 canal_bloqueado = False
 main_message_id = None  # ID da mensagem principal fixa
+user_messages = {}  # Dicionário para armazenar a mensagem individual de cada usuário
 
 def get_gender_display(gender):
     return "👤 Anônimo" if gender == "homem" else "👩 Anônima"
@@ -363,18 +364,23 @@ class LeaveQueueView(discord.ui.View):
                 break
         
         if removed:
-            # Envia uma NOVA mensagem individual para o usuário
-            embed = discord.Embed(
-                title="💌 RandoChat - Saiu da Fila",
-                description=(
-                    f"**🚪 Você saiu da fila!**\n\n"
-                    f"**Seu perfil:** {get_gender_display(user_genders.get(interaction.user.id, 'homem'))}\n"
-                    f"**Procurando:** {get_preference_display(user_preferences.get(interaction.user.id, 'ambos'))}\n\n"
-                    "💡 Clique em **💌 Entrar na Fila** para voltar a procurar!"
-                ),
-                color=0xFF9999
-            )
-            await interaction.response.send_message(embed=embed, view=TicketView(), ephemeral=True)
+            # Atualiza a MESMA mensagem individual do usuário
+            user_id = interaction.user.id
+            if user_id in user_messages:
+                embed = discord.Embed(
+                    title="💌 RandoChat - Saiu da Fila",
+                    description=(
+                        f"**🚪 Você saiu da fila!**\n\n"
+                        f"**Seu perfil:** {get_gender_display(user_genders.get(user_id, 'homem'))}\n"
+                        f"**Procurando:** {get_preference_display(user_preferences.get(user_id, 'ambos'))}\n\n"
+                        "💡 Clique em **💌 Entrar na Fila** para voltar a procurar!"
+                    ),
+                    color=0xFF9999
+                )
+                await user_messages[user_id].edit(embed=embed, view=TicketView())
+                await interaction.response.defer()
+            else:
+                await interaction.response.send_message("❌ Mensagem não encontrada.", ephemeral=True)
         else:
             await interaction.response.send_message("❌ Você não estava na fila.", ephemeral=True)
 
@@ -391,7 +397,7 @@ class TicketView(discord.ui.View):
             color=0x66FF99
         )
         
-        # Envia uma NOVA mensagem individual para o usuário
+        # Envia uma NOVA mensagem individual para o usuário (apenas para configuração)
         setup_message = await interaction.response.send_message(
             embed=embed, 
             view=GenderSetupView(None),
@@ -415,7 +421,7 @@ class TicketView(discord.ui.View):
         user = interaction.user
         
         if user.id not in user_genders or user.id not in user_preferences:
-            # Se não tem perfil, mostra a mensagem de explicação completa
+            # Se não tem perfil, mostra mensagem na MESMA mensagem individual
             embed_explicacao = discord.Embed(
                 title="💌 RandoChat - Sistema de Chat Anônimo",
                 description=(
@@ -430,8 +436,18 @@ class TicketView(discord.ui.View):
                 ),
                 color=0xFF6B9E
             )
-            # Envia uma NOVA mensagem individual
-            await interaction.response.send_message(embed=embed_explicacao, view=TicketView(), ephemeral=True)
+            
+            # Se já existe uma mensagem individual, atualiza ela
+            if user.id in user_messages:
+                await user_messages[user.id].edit(embed=embed_explicacao, view=TicketView())
+                await interaction.response.defer()
+            else:
+                # Se não existe, cria uma nova mensagem individual
+                message = await interaction.response.send_message(embed=embed_explicacao, view=TicketView(), ephemeral=True)
+                if hasattr(message, 'message'):
+                    user_messages[user.id] = message.message
+                else:
+                    user_messages[user.id] = await interaction.original_response()
             return
 
         if user.id in active_users:
@@ -448,8 +464,17 @@ class TicketView(discord.ui.View):
                 ),
                 color=0xFF9999
             )
-            # Envia uma NOVA mensagem individual
-            await interaction.response.send_message(embed=embed, view=TicketView(), ephemeral=True)
+            
+            # Atualiza a MESMA mensagem individual
+            if user.id in user_messages:
+                await user_messages[user.id].edit(embed=embed, view=TicketView())
+                await interaction.response.defer()
+            else:
+                message = await interaction.response.send_message(embed=embed, view=TicketView(), ephemeral=True)
+                if hasattr(message, 'message'):
+                    user_messages[user.id] = message.message
+                else:
+                    user_messages[user.id] = await interaction.original_response()
             return
         
         for entry in fila_carentes:
@@ -467,8 +492,17 @@ class TicketView(discord.ui.View):
                     ),
                     color=0x66FF99
                 )
-                # Envia uma NOVA mensagem individual
-                await interaction.response.send_message(embed=embed, view=LeaveQueueView(user.id), ephemeral=True)
+                
+                # Atualiza a MESMA mensagem individual
+                if user.id in user_messages:
+                    await user_messages[user.id].edit(embed=embed, view=LeaveQueueView(user.id))
+                    await interaction.response.defer()
+                else:
+                    message = await interaction.response.send_message(embed=embed, view=LeaveQueueView(user.id), ephemeral=True)
+                    if hasattr(message, 'message'):
+                        user_messages[user.id] = message.message
+                    else:
+                        user_messages[user.id] = await interaction.original_response()
                 return
 
         fila_entry = {
@@ -495,8 +529,18 @@ class TicketView(discord.ui.View):
             ),
             color=0x66FF99
         )
-        # Envia uma NOVA mensagem individual
-        await interaction.response.send_message(embed=embed, view=LeaveQueueView(user.id), ephemeral=True)
+        
+        # Atualiza a MESMA mensagem individual
+        if user.id in user_messages:
+            await user_messages[user.id].edit(embed=embed, view=LeaveQueueView(user.id))
+            await interaction.response.defer()
+        else:
+            message = await interaction.response.send_message(embed=embed, view=LeaveQueueView(user.id), ephemeral=True)
+            if hasattr(message, 'message'):
+                user_messages[user.id] = message.message
+            else:
+                user_messages[user.id] = await interaction.original_response()
+        
         await tentar_formar_dupla(interaction.guild)
 
 class ConversationView(discord.ui.View):
