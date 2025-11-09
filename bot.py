@@ -258,7 +258,7 @@ async def tentar_formar_dupla(guild):
                     "📝 **Lembrete:**\n"
                     "• ⏰ 10 minutos de conversa\n"
                     "• 🎧 Call secreta disponível\n"
-                    "• ❌ Recusar = 1 hora de espera\n"
+                    "• ❌ Recusar = 1 hora de espera pra encontrar a mesma pessoa\n"
                     f"• ⏳ **Aceite em {ACCEPT_TIMEOUT} segundos ou o chat será fechado**\n"
                     "• 💬 Chat anônimo e seguro\n\n"
                     "🔍 **Você continua na fila procurando mais pessoas!**"
@@ -479,7 +479,7 @@ class IndividualView(discord.ui.View):
                     "• 🔍 **Procura contínua** - Encontre múltiplas pessoas\n"
                     "• ⏰ **10 minutos** de conversa por par\n"
                     "• 🎧 **Call secreta** durante o chat\n"
-                    "• ❌ Recusar alguém = **1 hora** de espera\n"
+                    "• ❌ Recusar alguém = **1 hora** de espera pra encontrar a mesma pessoa\n"
                     "• 💬 Chat 100% anônimo\n\n"
                     "⚙️ **Volte ao canal principal e clique em `Configurar Perfil`!**"
                 ),
@@ -553,7 +553,7 @@ class IndividualView(discord.ui.View):
                 "• 💬 **Chats simultâneos** com múltiplas pessoas\n"
                 "• ⏰ Cada chat dura **10 minutos**\n"
                 "• 🎧 **Call secreta** disponível\n"
-                "• ❌ Recusar = 1 hora de espera\n\n"
+                "• ❌ Recusar = 1 hora de espera pra encontrar a mesma pessoa\n\n"
                 "💡 **Você receberá novos chats automaticamente!**"
             ),
             color=0x66FF99
@@ -612,7 +612,7 @@ class TicketView(discord.ui.View):
                     "• 🔍 **Procura contínua** - Encontre múltiplas pessoas\n"
                     "• ⏰ **10 minutos** de conversa por par\n"
                     "• 🎧 **Call secreta** durante o chat\n"
-                    "• ❌ Recusar alguém = **1 hora** de espera\n"
+                    "• ❌ Recusar alguém = **1 hora** de espera pra encontrar a mesma pessoa\n"
                     "• 💬 Chat 100% anônimo\n\n"
                     "⚙️ **Clique em `Configurar Perfil` no canal principal!**"
                 ),
