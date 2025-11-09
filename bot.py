@@ -266,23 +266,27 @@ async def tentar_formar_dupla(guild):
                     await encerrar_canal_e_cleanup(canal)
                     continue
                 
-                aviso_text = (
-                    "💌 **Novo par encontrado no iTinder!**\n\n"
-                    f"Você foi levado para {canal.mention}\n"
-                    "📝 **Lembrete:**\n"
-                    "• ⏰ 10 minutos de conversa\n"
-                    "• 🎧 Call secreta disponível\n"
-                    "• ❌ Recusar = 1 hora de espera\n"
-                    f"• ⏳ **Aceite em 5 minutos ou o chat será fechado**\n"
-                    "• 💬 Chat anônimo e seguro\n\n"
-                    "🔍 **Você continua na fila procurando mais pessoas!**"
+                # ENVIAR MENSAGEM NO PV QUANDO ENCONTRAR UM PAR
+                aviso_pv_text = (
+                    "💌 **🎉 PAR ENCONTRADO NO iTINDER! 🎉**\n\n"
+                    f"**Encontramos alguém compatível para você!**\n\n"
+                    f"👤 **Seu par:** {u2.display_name if interaction.user.id == u1_id else u1.display_name}\n"
+                    f"📍 **Canal do chat:** {canal.mention}\n\n"
+                    "📝 **Para começar a conversar:**\n"
+                    "1. Vá para o canal do chat acima\n"
+                    "2. Clique em **✅ Aceitar Chat**\n"
+                    "3. Aguarde a outra pessoa aceitar também\n"
+                    "4. ⏰ **10 minutos** de conversa te aguardam!\n\n"
+                    f"⏳ **Você tem 5 minutos para aceitar!**\n"
+                    "💡 Aproveite para conhecer alguém novo!"
                 )
+                
                 try:
-                    await u1.send(aviso_text)
+                    await u1.send(aviso_pv_text)
                 except Exception:
                     pass
                 try:
-                    await u2.send(aviso_text)
+                    await u2.send(aviso_pv_text)
                 except Exception:
                     pass
                 
@@ -321,25 +325,6 @@ async def _accept_timeout_handler(canal, timeout=ACCEPT_TIMEOUT):
             await asyncio.sleep(2)
             await encerrar_canal_e_cleanup(canal)
 
-async def _send_pv_reminder(user, partner_name, canal):
-    """Envia lembrete no PV quando faltar 1 minuto"""
-    try:
-        embed = discord.Embed(
-            title="⏰ iTinder - Par Encontrado!",
-            description=(
-                f"**💌 Você encontrou um par!**\n\n"
-                f"👤 **Par encontrado:** {partner_name}\n"
-                f"📁 **Canal do chat:** {canal.mention}\n\n"
-                "⏳ **Falta apenas 1 minuto para o chat fechar!**\n"
-                "⚠️ **Aceite rapidamente para não perder a conversa!**\n\n"
-                "💡 **Corra para o canal e clique em '✅ Aceitar Chat'!**"
-            ),
-            color=0xFF6B9E
-        )
-        await user.send(embed=embed)
-    except Exception:
-        pass
-
 async def _auto_close_channel_after(canal, segundos=CHANNEL_DURATION):
     await asyncio.sleep(segundos - 60)
     
@@ -348,7 +333,7 @@ async def _auto_close_channel_after(canal, segundos=CHANNEL_DURATION):
     
     data = active_channels.get(canal.id)
     if data and not data.get("warning_sent", False):
-        # Enviar lembretes no PV para ambos os usuários
+        # ENVIAR MENSAGEM NO PV QUANDO ESTIVER FALTANDO 1 MINUTO
         u1_id = data.get("u1")
         u2_id = data.get("u2")
         
@@ -358,8 +343,25 @@ async def _auto_close_channel_after(canal, segundos=CHANNEL_DURATION):
             u2 = guild.get_member(u2_id)
             
             if u1 and u2:
-                await _send_pv_reminder(u1, u2.display_name, canal)
-                await _send_pv_reminder(u2, u1.display_name, canal)
+                aviso_final_pv = (
+                    "⏰ **ATENÇÃO: Seu chat no iTinder está terminando!**\n\n"
+                    "⌛ **Faltam apenas 1 minuto** para o seu chat encerrar!\n\n"
+                    "💡 **Aproveite os últimos momentos:**\n"
+                    "• Troque contatos se quiserem continuar conversando\n"
+                    "• Finalize a conversa de forma educada\n"
+                    "• O chat será automaticamente fechado\n\n"
+                    "🔍 **Você continua na fila procurando mais pessoas!**\n"
+                    "💫 Obrigado por usar o iTinder!"
+                )
+                
+                try:
+                    await u1.send(aviso_final_pv)
+                except Exception:
+                    pass
+                try:
+                    await u2.send(aviso_final_pv)
+                except Exception:
+                    pass
         
         try:
             embed = discord.Embed(
