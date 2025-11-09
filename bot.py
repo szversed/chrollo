@@ -11,7 +11,7 @@ intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
 intents.guilds = True
-intents.voice_states = True  # Adicionado para calls de voz
+intents.voice_states = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
@@ -22,14 +22,14 @@ user_genders = {}
 user_preferences = {}
 PAIR_COOLDOWNS = {}
 PAIR_COOLDOWN_SECONDS = 5 * 60
-ACCEPT_TIMEOUT = 60  # Mudado para 60 segundos
-CHANNEL_DURATION = 10 * 60
+ACCEPT_TIMEOUT = 100  # 100 segundos para aceitar/recusar
+CHANNEL_DURATION = 10 * 60  # 10 minutos de conversa
 
 setup_channel_id = None
 canal_bloqueado = False
-main_message_id = None  # ID da mensagem principal fixa
-user_messages = {}  # Dicionário para armazenar a mensagem individual de cada usuário
-user_queues = {}  # Controla se o usuário está ativamente na fila
+main_message_id = None
+user_messages = {}
+user_queues = {}
 
 def get_gender_display(gender):
     return "👨🏻 Anônimo" if gender == "homem" else "👩🏻 Anônima"
@@ -57,7 +57,7 @@ def set_pair_cooldown(u1_id, u2_id):
     PAIR_COOLDOWNS[key] = time.time() + PAIR_COOLDOWN_SECONDS
 
 def gerar_nome_canal(guild, user1_id, user2_id):
-    base = f"chat-{user1_id}-{user2_id}"[-20:]  # Nome único baseado nos IDs
+    base = f"chat-{user1_id}-{user2_id}"[-20:]
     existing = {c.name for c in guild.text_channels}
     if base not in existing:
         return base
@@ -68,21 +68,15 @@ def gerar_nome_canal(guild, user1_id, user2_id):
             return candidate
         i += 1
 
-def gerar_nome_call(guild):
-    base = "call-secreta"
-    existing = {c.name for c in guild.voice_channels}
-    if base not in existing:
-        return base
-    i = 1
-    while True:
-        candidate = f"{base}-{i}"
-        if candidate not in existing:
-            return candidate
-        i += 1
+def gerar_nome_call(u1, u2):
+    """Gera nome da call com os nomes dos usuários"""
+    nome_u1 = u1.display_name[:10]
+    nome_u2 = u2.display_name[:10]
+    return f"💕 {nome_u1} & {nome_u2}"
 
 async def criar_call_secreta(guild, u1, u2):
     """Cria uma call de voz temporária para o par"""
-    nome_call = gerar_nome_call(guild)
+    nome_call = gerar_nome_call(u1, u2)
     
     categoria = discord.utils.get(guild.categories, name="iTinder")
     if not categoria:
@@ -91,11 +85,14 @@ async def criar_call_secreta(guild, u1, u2):
         except Exception:
             categoria = None
     
+    owner = guild.owner
+    
     overwrites = {
         guild.default_role: discord.PermissionOverwrite(view_channel=False, connect=False),
         guild.me: discord.PermissionOverwrite(view_channel=True, connect=True, manage_channels=True),
         u1: discord.PermissionOverwrite(view_channel=True, connect=True, speak=True),
         u2: discord.PermissionOverwrite(view_channel=True, connect=True, speak=True),
+        owner: discord.PermissionOverwrite(view_channel=True, connect=False, speak=False),
     }
     
     try:
@@ -114,9 +111,7 @@ async def encerrar_canal_e_cleanup(canal):
         if data:
             u1 = data.get("u1")
             u2 = data.get("u2")
-            # NÃO remove de active_users aqui - o usuário pode continuar na fila
             
-            # Encerra a call associada se existir
             call_channel = data.get("call_channel")
             if call_channel:
                 try:
@@ -138,9 +133,8 @@ async def encerrar_canal_e_cleanup(canal):
 async def tentar_formar_dupla(guild):
     """Tenta formar pares continuamente para usuários na fila"""
     while True:
-        await asyncio.sleep(2)  # Verifica a cada 2 segundos
+        await asyncio.sleep(2)
         
-        # Filtra usuários que ainda estão ativamente na fila
         usuarios_na_fila = [entry for entry in fila_carentes if user_queues.get(entry["user_id"], False)]
         
         if len(usuarios_na_fila) < 2:
@@ -154,11 +148,9 @@ async def tentar_formar_dupla(guild):
                 u1_id = entry1["user_id"]
                 u2_id = entry2["user_id"]
                 
-                # Verifica se ambos ainda estão ativamente na fila
                 if not user_queues.get(u1_id, False) or not user_queues.get(u2_id, False):
                     continue
                 
-                # Verifica se não estão já em um chat juntos
                 if any(channel_data.get("u1") == u1_id and channel_data.get("u2") == u2_id or 
                        channel_data.get("u1") == u2_id and channel_data.get("u2") == u1_id 
                        for channel_data in active_channels.values()):
@@ -180,19 +172,9 @@ async def tentar_formar_dupla(guild):
                 if not can_pair(u1_id, u2_id):
                     continue
 
-                # Remove da fila temporariamente durante a formação do par
-                try:
-                    fila_carentes.remove(entry1)
-                    fila_carentes.remove(entry2)
-                except ValueError:
-                    continue
-                
                 u1 = guild.get_member(u1_id)
                 u2 = guild.get_member(u2_id)
                 if not u1 or not u2:
-                    # Se não encontrou os membros, recoloca na fila
-                    fila_carentes.append(entry1)
-                    fila_carentes.append(entry2)
                     continue
                 
                 nome_canal = gerar_nome_canal(guild, u1_id, u2_id)
@@ -204,7 +186,6 @@ async def tentar_formar_dupla(guild):
                     except Exception:
                         categoria = None
                 
-                # Obtém o dono do servidor
                 owner = guild.owner
                 
                 overwrites = {
@@ -212,7 +193,7 @@ async def tentar_formar_dupla(guild):
                     guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True),
                     u1: discord.PermissionOverwrite(view_channel=True, send_messages=False),
                     u2: discord.PermissionOverwrite(view_channel=True, send_messages=False),
-                    owner: discord.PermissionOverwrite(view_channel=True, send_messages=False),  # Dono pode apenas ver
+                    owner: discord.PermissionOverwrite(view_channel=True, send_messages=False, read_message_history=True),
                 }
                 
                 try:
@@ -221,8 +202,6 @@ async def tentar_formar_dupla(guild):
                     else:
                         canal = await guild.create_text_channel(nome_canal, overwrites=overwrites, reason="Canal iTinder temporário")
                 except Exception:
-                    fila_carentes.append(entry1)
-                    fila_carentes.append(entry2)
                     continue
                 
                 active_channels[canal.id] = {
@@ -232,8 +211,8 @@ async def tentar_formar_dupla(guild):
                     "message_id": None,
                     "created_at": time.time(),
                     "started": False,
-                    "call_channel": None,  # Inicialmente sem call
-                    "warning_sent": False  # Para controlar o aviso de 1 minuto
+                    "call_channel": None,
+                    "warning_sent": False
                 }
                 
                 gender1_display = get_gender_display(gender1)
@@ -248,7 +227,7 @@ async def tentar_formar_dupla(guild):
                         "• ⏰ **10 minutos** de conversa após aceitar\n"
                         "• 🎧 **Call secreta** disponível durante o chat\n"
                         "• ❌ Se recusar: **5 minutos** de espera para encontrar a mesma pessoa\n"
-                        "• ⏳ **Chat será fechado em 1 minuto se ninguém aceitar**\n"
+                        f"• ⏳ **Chat será fechado em {ACCEPT_TIMEOUT} segundos se ninguém aceitar**\n"
                         "• 🔒 Chat totalmente anônimo e privado\n\n"
                         "💡 **Dica:** Sejam respeitosos e aproveitem a conversa!"
                     ),
@@ -261,8 +240,6 @@ async def tentar_formar_dupla(guild):
                     view.message_id = msg.id
                 except Exception:
                     await encerrar_canal_e_cleanup(canal)
-                    fila_carentes.append(entry1)
-                    fila_carentes.append(entry2)
                     continue
                 
                 aviso_text = (
@@ -272,7 +249,7 @@ async def tentar_formar_dupla(guild):
                     "• ⏰ 10 minutos de conversa\n"
                     "• 🎧 Call secreta disponível\n"
                     "• ❌ Recusar = 5 minutos de espera\n"
-                    "• ⏳ **Aceite em 1 minuto ou o chat será fechado**\n"
+                    f"• ⏳ **Aceite em {ACCEPT_TIMEOUT} segundos ou o chat será fechado**\n"
                     "• 💬 Chat anônimo e seguro\n\n"
                     "🔍 **Você continua na fila procurando mais pessoas!**"
                 )
@@ -286,7 +263,7 @@ async def tentar_formar_dupla(guild):
                     pass
                 
                 asyncio.create_task(_accept_timeout_handler(canal))
-                break  # Sai do loop interno após formar um par
+                break
 
 async def _accept_timeout_handler(canal, timeout=ACCEPT_TIMEOUT):
     await asyncio.sleep(timeout)
@@ -301,31 +278,13 @@ async def _accept_timeout_handler(canal, timeout=ACCEPT_TIMEOUT):
             u2 = data.get("u2")
             if u1 and u2:
                 set_pair_cooldown(u1, u2)
-                # Recoloca os usuários na fila se ainda estiverem ativos
-                if user_queues.get(u1, False):
-                    user_entry = {
-                        "user_id": u1,
-                        "gender": user_genders.get(u1, "homem"),
-                        "preference": user_preferences.get(u1, "ambos")
-                    }
-                    if user_entry not in fila_carentes:
-                        fila_carentes.append(user_entry)
-                
-                if user_queues.get(u2, False):
-                    user_entry = {
-                        "user_id": u2,
-                        "gender": user_genders.get(u2, "homem"),
-                        "preference": user_preferences.get(u2, "ambos")
-                    }
-                    if user_entry not in fila_carentes:
-                        fila_carentes.append(user_entry)
             
             try:
                 msg = await canal.fetch_message(data["message_id"])
                 embed = discord.Embed(
                     title="⏰ Tempo Esgotado",
                     description=(
-                        "O tempo para aceitar expirou (1 minuto).\n\n"
+                        f"O tempo para aceitar expirou ({ACCEPT_TIMEOUT} segundos).\n\n"
                         "⚠️ **Nenhum dos dois aceitou a conversa a tempo.**\n"
                         "💫 Volte ao canal principal para tentar novamente!"
                     ),
@@ -338,8 +297,7 @@ async def _accept_timeout_handler(canal, timeout=ACCEPT_TIMEOUT):
             await encerrar_canal_e_cleanup(canal)
 
 async def _auto_close_channel_after(canal, segundos=CHANNEL_DURATION):
-    # Aviso de 1 minuto antes do fim
-    await asyncio.sleep(segundos - 60)  # 9 minutos (aviso com 1 minuto restante)
+    await asyncio.sleep(segundos - 60)
     
     if canal.id not in active_channels:
         return
@@ -355,14 +313,13 @@ async def _auto_close_channel_after(canal, segundos=CHANNEL_DURATION):
                     "💡 **Dica:** Troquem contatos se quiserem continuar a conversa!\n"
                     "🔒 O chat será automaticamente fechado em 60 segundos."
                 ),
-                color=0xFFA500  # Laranja para aviso
+                color=0xFFA500
             )
             await canal.send(embed=embed)
             active_channels[canal.id]["warning_sent"] = True
         except Exception:
             pass
     
-    # Espera o último minuto e encerra
     await asyncio.sleep(60)
     
     if canal.id not in active_channels:
@@ -370,28 +327,6 @@ async def _auto_close_channel_after(canal, segundos=CHANNEL_DURATION):
     try:
         data = active_channels.get(canal.id)
         if data:
-            u1 = data.get("u1")
-            u2 = data.get("u2")
-            
-            # Recoloca os usuários na fila se ainda estiverem ativos
-            if user_queues.get(u1, False):
-                user_entry = {
-                    "user_id": u1,
-                    "gender": user_genders.get(u1, "homem"),
-                    "preference": user_preferences.get(u1, "ambos")
-                }
-                if user_entry not in fila_carentes:
-                    fila_carentes.append(user_entry)
-            
-            if user_queues.get(u2, False):
-                user_entry = {
-                    "user_id": u2,
-                    "gender": user_genders.get(u2, "homem"),
-                    "preference": user_preferences.get(u2, "ambos")
-                }
-                if user_entry not in fila_carentes:
-                    fila_carentes.append(user_entry)
-            
             try:
                 msg = await canal.fetch_message(data["message_id"])
                 embed = discord.Embed(
@@ -468,10 +403,8 @@ class PreferenceSetupView(discord.ui.View):
         gender_display = get_gender_display(gender)
         preference_display = get_preference_display(preference)
         
-        # Apaga a mensagem de configuração ephemeral
         await self.setup_message.delete()
         
-        # Envia uma mensagem temporária que será apagada após 5 segundos
         embed_explicacao = discord.Embed(
             title="⚙️ Configuração Concluída",
             description=(
@@ -483,7 +416,6 @@ class PreferenceSetupView(discord.ui.View):
             color=0x66FF99
         )
         
-        # Envia a mensagem e agenda para apagar após 5 segundos
         await interaction.response.send_message(embed=embed_explicacao, ephemeral=True)
         await asyncio.sleep(5)
         await interaction.delete_original_response()
@@ -499,13 +431,9 @@ class LeaveQueueView(discord.ui.View):
             await interaction.response.send_message("❌ Isso é só para você.", ephemeral=True)
             return
         
-        # Remove da fila ativa
         user_queues[interaction.user.id] = False
-        
-        # Remove todas as entradas do usuário na fila
         fila_carentes[:] = [entry for entry in fila_carentes if entry["user_id"] != interaction.user.id]
         
-        # Atualiza a MESMA mensagem individual do usuário
         user_id = interaction.user.id
         if user_id in user_messages:
             embed = discord.Embed(
@@ -524,7 +452,6 @@ class LeaveQueueView(discord.ui.View):
         else:
             await interaction.response.send_message("✅ Você saiu da fila.", ephemeral=True)
 
-# VIEW para o embed individual do usuário (SEM botão de Configurar Perfil)
 class IndividualView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -534,7 +461,6 @@ class IndividualView(discord.ui.View):
         user = interaction.user
         
         if user.id not in user_genders or user.id not in user_preferences:
-            # Se não tem perfil, mostra mensagem na MESMA mensagem individual
             embed_explicacao = discord.Embed(
                 title="💌 iTinder - Configure seu Perfil",
                 description=(
@@ -550,12 +476,10 @@ class IndividualView(discord.ui.View):
                 color=0xFF6B9E
             )
             
-            # Se já existe uma mensagem individual, atualiza ela
             if user.id in user_messages:
                 await user_messages[user.id].edit(embed=embed_explicacao, view=IndividualView())
                 await interaction.response.defer()
             else:
-                # Se não existe, cria uma nova mensagem individual
                 message = await interaction.response.send_message(embed=embed_explicacao, view=IndividualView(), ephemeral=True)
                 if hasattr(message, 'message'):
                     user_messages[user.id] = message.message
@@ -563,7 +487,6 @@ class IndividualView(discord.ui.View):
                     user_messages[user.id] = await interaction.original_response()
             return
 
-        # Verifica se já está ativamente na fila
         if user_queues.get(user.id, False):
             gender_display = get_gender_display(user_genders[user.id])
             preference_display = get_preference_display(user_preferences[user.id])
@@ -583,7 +506,6 @@ class IndividualView(discord.ui.View):
                 color=0x66FF99
             )
             
-            # Atualiza a MESMA mensagem individual
             if user.id in user_messages:
                 await user_messages[user.id].edit(embed=embed, view=LeaveQueueView(user.id))
                 await interaction.response.defer()
@@ -595,7 +517,6 @@ class IndividualView(discord.ui.View):
                     user_messages[user.id] = await interaction.original_response()
             return
 
-        # Entra na fila ativamente
         user_queues[user.id] = True
         
         fila_entry = {
@@ -604,7 +525,6 @@ class IndividualView(discord.ui.View):
             "preference": user_preferences[user.id]
         }
         
-        # Remove entradas antigas do usuário e adiciona a nova
         fila_carentes[:] = [entry for entry in fila_carentes if entry["user_id"] != user.id]
         fila_carentes.append(fila_entry)
         
@@ -629,7 +549,6 @@ class IndividualView(discord.ui.View):
             color=0x66FF99
         )
         
-        # Atualiza a MESMA mensagem individual
         if user.id in user_messages:
             await user_messages[user.id].edit(embed=embed, view=LeaveQueueView(user.id))
             await interaction.response.defer()
@@ -640,21 +559,18 @@ class IndividualView(discord.ui.View):
             else:
                 user_messages[user.id] = await interaction.original_response()
 
-# VIEW PRINCIPAL: Para o embed principal (COM botão de Configurar Perfil)
 class TicketView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
     @discord.ui.button(label="👨🏻👩🏻 Configurar Perfil", style=discord.ButtonStyle.primary, custom_id="config_gender")
     async def config_gender(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # SEMPRE inicia a configuração, mesmo se já tiver perfil
         embed = discord.Embed(
             title="⚙️ Configurar Perfil",
             description="👥 **Escolha como você se identifica:**",
             color=0x66FF99
         )
         
-        # Envia uma mensagem ephemeral para configuração
         setup_message = await interaction.response.send_message(
             embed=embed, 
             view=GenderSetupView(None),
@@ -678,7 +594,6 @@ class TicketView(discord.ui.View):
         user = interaction.user
         
         if user.id not in user_genders or user.id not in user_preferences:
-            # Se não tem perfil, cria o embed individual
             embed_explicacao = discord.Embed(
                 title="💌 iTinder - Configure seu Perfil",
                 description=(
@@ -694,7 +609,6 @@ class TicketView(discord.ui.View):
                 color=0xFF6B9E
             )
             
-            # Cria uma nova mensagem individual
             message = await interaction.response.send_message(embed=embed_explicacao, view=IndividualView(), ephemeral=True)
             if hasattr(message, 'message'):
                 user_messages[user.id] = message.message
@@ -702,7 +616,6 @@ class TicketView(discord.ui.View):
                 user_messages[user.id] = await interaction.original_response()
             return
 
-        # Se tem perfil, cria o embed individual para entrar na fila
         gender_display = get_gender_display(user_genders[user.id])
         preference_display = get_preference_display(user_preferences[user.id])
         
@@ -718,14 +631,12 @@ class TicketView(discord.ui.View):
             color=0x66FF99
         )
         
-        # Cria uma nova mensagem individual
         message = await interaction.response.send_message(embed=embed_inicial, view=IndividualView(), ephemeral=True)
         if hasattr(message, 'message'):
             user_messages[user.id] = message.message
         else:
             user_messages[user.id] = await interaction.original_response()
 
-# (As classes ConversationView e EncerrarView permanecem as mesmas do código anterior)
 class ConversationView(discord.ui.View):
     def __init__(self, canal, u1, u2, message_id):
         super().__init__(timeout=None)
@@ -757,8 +668,8 @@ class ConversationView(discord.ui.View):
                 description=(
                     f"{self.u1.mention} {'✅' if self.u1.id in accepted else '⏳'}\n"
                     f"{self.u2.mention} {'✅' if self.u2.id in accepted else '⏳'}\n\n"
-                    "⏰ **Aguardando ambos aceitarem...**\n"
-                    "⏳ **Chat será fechado em 1 minuto se ninguém aceitar**\n"
+                    f"⏰ **Aguardando ambos aceitarem...**\n"
+                    f"⏳ **Chat será fechado em {ACCEPT_TIMEOUT} segundos se ninguém aceitar**\n"
                     "💡 **Lembrete:** 10 minutos de conversa após aceitar"
                 ),
                 color=0xFF6B9E
@@ -809,25 +720,6 @@ class ConversationView(discord.ui.View):
 
         set_pair_cooldown(self.u1.id, self.u2.id)
         
-        # Recoloca os usuários na fila se ainda estiverem ativos
-        if user_queues.get(self.u1.id, False):
-            user_entry = {
-                "user_id": self.u1.id,
-                "gender": user_genders.get(self.u1.id, "homem"),
-                "preference": user_preferences.get(self.u1.id, "ambos")
-            }
-            if user_entry not in fila_carentes:
-                fila_carentes.append(user_entry)
-        
-        if user_queues.get(self.u2.id, False):
-            user_entry = {
-                "user_id": self.u2.id,
-                "gender": user_genders.get(self.u2.id, "homem"),
-                "preference": user_preferences.get(self.u2.id, "ambos")
-            }
-            if user_entry not in fila_carentes:
-                fila_carentes.append(user_entry)
-        
         try:
             msg = await self.canal.fetch_message(self.message_id)
             embed = discord.Embed(
@@ -865,12 +757,10 @@ class EncerrarView(discord.ui.View):
             await interaction.response.send_message("❌ Estado inválido.", ephemeral=True)
             return
 
-        # Verifica se já existe uma call
         if data.get("call_channel"):
             await interaction.response.send_message("❌ Já existe uma call ativa para este chat.", ephemeral=True)
             return
 
-        # Cria a call secreta
         call_channel = await criar_call_secreta(interaction.guild, self.u1, self.u2)
         if call_channel:
             data["call_channel"] = call_channel
@@ -917,8 +807,8 @@ class EncerrarView(discord.ui.View):
         except Exception:
             pass
         
-        await encerrar_canal_e_cleanup(canal)
-        await interaction.response.send_message("✅ Chat encerrado. Você continua na fila!", ephemeral=True)
+        await encerrar_canal_e_cleanup(self.canal)
+        await interaction.response.send_message("✅ Chat encerrado e apagado. Você continua na fila!", ephemeral=True)
 
 @bot.tree.command(name="setupcarente", description="Configura o sistema iTinder (apenas admin)")
 async def setupcarente(interaction: discord.Interaction):
@@ -980,25 +870,6 @@ async def setupcarente(interaction: discord.Interaction):
     except Exception:
         await interaction.response.send_message("❌ Erro ao enviar mensagem de setup", ephemeral=True)
 
-# Inicia o loop de formação de duplas quando o bot liga
-@bot.event
-async def on_ready():
-    print(f"✅ iTinder online! Conectado como {bot.user.name}")
-    
-    guild = discord.Object(id=MINHA_GUILD_ID)
-    try:
-        bot.tree.copy_global_to(guild=guild)
-        await bot.tree.sync(guild=guild)
-        print("✅ Comandos sincronizados na guild!")
-    except Exception as e:
-        print(f"⚠️ Erro ao sincronizar comandos: {e}")
-    
-    # Inicia o loop contínuo de formação de duplas
-    guild_instance = bot.get_guild(MINHA_GUILD_ID)
-    if guild_instance:
-        asyncio.create_task(tentar_formar_dupla(guild_instance))
-
-# (Os outros eventos permanecem iguais)
 @bot.event
 async def on_message(message):
     if message.guild and message.guild.id == MINHA_GUILD_ID:
@@ -1021,17 +892,12 @@ async def on_guild_channel_delete(channel):
     cid = channel.id
     if cid in active_channels:
         data = active_channels.get(cid, {})
-        u1 = data.get("u1")
-        u2 = data.get("u2")
-        
-        # Encerra a call associada se existir
         call_channel = data.get("call_channel")
         if call_channel:
             try:
                 await call_channel.delete()
             except:
                 pass
-        
         try:
             del active_channels[cid]
         except Exception:
@@ -1039,12 +905,9 @@ async def on_guild_channel_delete(channel):
 
 @bot.event
 async def on_voice_state_update(member, before, after):
-    """Monitora calls secretas para limpeza automática"""
-    # Se um usuário saiu de uma call que está no active_channels
     if before.channel and before.channel != after.channel:
         for cid, data in active_channels.items():
             if data.get("call_channel") and data["call_channel"].id == before.channel.id:
-                # Verifica se a call está vazia
                 if len(before.channel.members) == 0:
                     try:
                         await before.channel.delete()
@@ -1060,6 +923,22 @@ async def on_interaction(interaction: discord.Interaction):
                 await interaction.response.send_message("❌ Este bot não está disponível neste servidor.", ephemeral=True)
             return
     await bot.process_application_commands(interaction)
+
+@bot.event
+async def on_ready():
+    print(f"✅ iTinder online! Conectado como {bot.user.name}")
+    
+    guild = discord.Object(id=MINHA_GUILD_ID)
+    try:
+        bot.tree.copy_global_to(guild=guild)
+        await bot.tree.sync(guild=guild)
+        print("✅ Comandos sincronizados na guild!")
+    except Exception as e:
+        print(f"⚠️ Erro ao sincronizar comandos: {e}")
+    
+    guild_instance = bot.get_guild(MINHA_GUILD_ID)
+    if guild_instance:
+        asyncio.create_task(tentar_formar_dupla(guild_instance))
 
 if __name__ == "__main__":
     token = os.getenv("TOKEN")
