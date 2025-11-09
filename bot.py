@@ -236,7 +236,10 @@ async def tentar_formar_dupla(guild):
                     "created_at": time.time(),
                     "started": False,
                     "call_channel": None,
-                    "warning_sent": False
+                    "warning_sent": False,
+                    "extensions": 0,
+                    "extension_requested": False,
+                    "extension_accepted": set()
                 }
                 
                 gender1_display = get_gender_display(gender1)
@@ -251,7 +254,7 @@ async def tentar_formar_dupla(guild):
                         "• ⏰ **10 minutos** de conversa após aceitar\n"
                         "• 🎧 **Call secreta** disponível durante o chat\n"
                         "• ❌ Se recusar: **1 hora** de espera para encontrar a mesma pessoa\n"
-                        f"• ⏳ **Chat será fechado em 5 minutos se ninguém aceitar**\n"
+                        f"• ⏳ **Chat será fechado em {ACCEPT_TIMEOUT//60} minutos se ninguém aceitar**\n"
                         "• 🔒 Chat totalmente anônimo e privado\n\n"
                         "💡 **Dica:** Sejam respeitosos e aproveitem a conversa!"
                     ),
@@ -266,27 +269,23 @@ async def tentar_formar_dupla(guild):
                     await encerrar_canal_e_cleanup(canal)
                     continue
                 
-                # ENVIAR MENSAGEM NO PV QUANDO ENCONTRAR UM PAR
-                aviso_pv_text = (
-                    "💌 **🎉 PAR ENCONTRADO NO iTINDER! 🎉**\n\n"
-                    f"**Encontramos alguém compatível para você!**\n\n"
-                    f"👤 **Seu par:** {u2.display_name if interaction.user.id == u1_id else u1.display_name}\n"
-                    f"📍 **Canal do chat:** {canal.mention}\n\n"
-                    "📝 **Para começar a conversar:**\n"
-                    "1. Vá para o canal do chat acima\n"
-                    "2. Clique em **✅ Aceitar Chat**\n"
-                    "3. Aguarde a outra pessoa aceitar também\n"
-                    "4. ⏰ **10 minutos** de conversa te aguardam!\n\n"
-                    f"⏳ **Você tem 5 minutos para aceitar!**\n"
-                    "💡 Aproveite para conhecer alguém novo!"
+                aviso_text = (
+                    "💌 **Novo par encontrado no iTinder!**\n\n"
+                    f"Você foi levado para {canal.mention}\n"
+                    "📝 **Lembrete:**\n"
+                    "• ⏰ 10 minutos de conversa\n"
+                    "• 🎧 Call secreta disponível\n"
+                    "• ❌ Recusar = 1 hora de espera\n"
+                    f"• ⏳ **Aceite em {ACCEPT_TIMEOUT//60} minutos ou o chat será fechado**\n"
+                    "• 💬 Chat anônimo e seguro\n\n"
+                    "🔍 **Você continua na fila procurando mais pessoas!**"
                 )
-                
                 try:
-                    await u1.send(aviso_pv_text)
+                    await u1.send(aviso_text)
                 except Exception:
                     pass
                 try:
-                    await u2.send(aviso_pv_text)
+                    await u2.send(aviso_text)
                 except Exception:
                     pass
                 
@@ -313,7 +312,7 @@ async def _accept_timeout_handler(canal, timeout=ACCEPT_TIMEOUT):
                 embed = discord.Embed(
                     title="⏰ Tempo Esgotado",
                     description=(
-                        f"O tempo para aceitar expirou (5 minutos).\n\n"
+                        f"O tempo para aceitar expirou ({ACCEPT_TIMEOUT//60} minutos).\n\n"
                         "⚠️ **Nenhum dos dois aceitou a conversa a tempo.**\n"
                         "💫 Volte ao canal principal para tentar novamente!"
                     ),
@@ -326,63 +325,73 @@ async def _accept_timeout_handler(canal, timeout=ACCEPT_TIMEOUT):
             await encerrar_canal_e_cleanup(canal)
 
 async def _auto_close_channel_after(canal, segundos=CHANNEL_DURATION):
-    await asyncio.sleep(segundos - 60)
+    """Controla o tempo da conversa e oferece extensões"""
+    remaining_time = segundos
+    
+    # Enviar aviso quando faltar 1 minuto
+    await asyncio.sleep(remaining_time - 60)
     
     if canal.id not in active_channels:
         return
     
     data = active_channels.get(canal.id)
     if data and not data.get("warning_sent", False):
-        # ENVIAR MENSAGEM NO PV QUANDO ESTIVER FALTANDO 1 MINUTO
-        u1_id = data.get("u1")
-        u2_id = data.get("u2")
-        
-        if u1_id and u2_id:
-            guild = canal.guild
-            u1 = guild.get_member(u1_id)
-            u2 = guild.get_member(u2_id)
-            
-            if u1 and u2:
-                aviso_final_pv = (
-                    "⏰ **ATENÇÃO: Seu chat no iTinder está terminando!**\n\n"
-                    "⌛ **Faltam apenas 1 minuto** para o seu chat encerrar!\n\n"
-                    "💡 **Aproveite os últimos momentos:**\n"
-                    "• Troque contatos se quiserem continuar conversando\n"
-                    "• Finalize a conversa de forma educada\n"
-                    "• O chat será automaticamente fechado\n\n"
-                    "🔍 **Você continua na fila procurando mais pessoas!**\n"
-                    "💫 Obrigado por usar o iTinder!"
-                )
-                
-                try:
-                    await u1.send(aviso_final_pv)
-                except Exception:
-                    pass
-                try:
-                    await u2.send(aviso_final_pv)
-                except Exception:
-                    pass
-        
         try:
+            # Oferecer extensão de tempo
             embed = discord.Embed(
                 title="⏰ Aviso: Chat Terminando",
                 description=(
                     "**⚠️ O chat termina em 1 minuto!**\n\n"
                     "⏳ **Tempo restante:** 1 minuto\n"
-                    "💡 **Dica:** Troquem contatos se quiserem continuar a conversa!\n"
-                    "🔒 O chat será automaticamente fechado em 60 segundos."
+                    "💡 **Desejam adicionar mais 5 minutos de conversa?**\n"
+                    "🔒 Ambos precisam aceitar para estender o tempo!"
                 ),
                 color=0xFFA500
             )
-            await canal.send(embed=embed)
+            view = ExtensionView(canal)
+            await canal.send(embed=embed, view=view)
             active_channels[canal.id]["warning_sent"] = True
+            active_channels[canal.id]["extension_requested"] = True
         except Exception:
             pass
     
+    # Aguardar resposta da extensão ou finalizar
     await asyncio.sleep(60)
     
     if canal.id not in active_channels:
         return
+        
+    data = active_channels.get(canal.id)
+    if data and data.get("extension_requested", False):
+        # Verificar se ambos aceitaram a extensão
+        extension_accepted = data.get("extension_accepted", set())
+        if len(extension_accepted) >= 2:
+            # Ambos aceitaram - adicionar 5 minutos
+            active_channels[canal.id]["extensions"] += 1
+            active_channels[canal.id]["extension_requested"] = False
+            active_channels[canal.id]["extension_accepted"] = set()
+            active_channels[canal.id]["warning_sent"] = False
+            
+            try:
+                embed = discord.Embed(
+                    title="✅ Tempo Estendido!",
+                    description=(
+                        "**🎉 +5 minutos adicionados!**\n\n"
+                        f"⏰ **Tempo total:** {10 + (active_channels[canal.id]['extensions'] * 5)} minutos\n"
+                        "💬 Continuem aproveitando a conversa!\n"
+                        "⏳ Novo aviso em 4 minutos..."
+                    ),
+                    color=0x66FF99
+                )
+                await canal.send(embed=embed)
+            except Exception:
+                pass
+            
+            # Reiniciar o timer com +5 minutos
+            asyncio.create_task(_auto_close_channel_after(canal, 5 * 60))
+            return
+    
+    # Finalizar o chat se não houve extensão ou não foi aceita
     try:
         data = active_channels.get(canal.id)
         if data:
@@ -410,6 +419,74 @@ async def _auto_close_channel_after(canal, segundos=CHANNEL_DURATION):
             await encerrar_canal_e_cleanup(canal)
     except Exception:
         pass
+
+class ExtensionView(discord.ui.View):
+    """View para aceitar extensão de tempo"""
+    def __init__(self, canal):
+        super().__init__(timeout=60)  # 1 minuto para responder
+        self.canal = canal
+
+    @discord.ui.button(label="✅ Sim, +5min", style=discord.ButtonStyle.success, custom_id="extend_yes")
+    async def extend_yes(self, interaction: discord.Interaction, button: discord.ui.Button):
+        data = active_channels.get(self.canal.id)
+        if not data:
+            await interaction.response.send_message("❌ Canal não encontrado.", ephemeral=True)
+            return
+            
+        user_id = interaction.user.id
+        if user_id not in [data.get("u1"), data.get("u2")]:
+            await interaction.response.send_message("❌ Você não pode interagir aqui.", ephemeral=True)
+            return
+            
+        data.setdefault("extension_accepted", set()).add(user_id)
+        accepted_count = len(data["extension_accepted"])
+        
+        if accepted_count == 1:
+            await interaction.response.send_message(
+                "✅ Você aceitou a extensão! Aguardando o outro usuário...", 
+                ephemeral=True
+            )
+        elif accepted_count >= 2:
+            await interaction.response.send_message(
+                "✅ Extensão aceita por ambos! +5 minutos adicionados.", 
+                ephemeral=True
+            )
+            # A extensão será processada no timer principal
+
+    @discord.ui.button(label="❌ Não, finalizar", style=discord.ButtonStyle.danger, custom_id="extend_no")
+    async def extend_no(self, interaction: discord.Interaction, button: discord.ui.Button):
+        data = active_channels.get(self.canal.id)
+        if not data:
+            await interaction.response.send_message("❌ Canal não encontrado.", ephemeral=True)
+            return
+            
+        user_id = interaction.user.id
+        if user_id not in [data.get("u1"), data.get("u2")]:
+            await interaction.response.send_message("❌ Você não pode interagir aqui.", ephemeral=True)
+            return
+            
+        # Se um usuário recusar, finalizar imediatamente
+        try:
+            embed = discord.Embed(
+                title="❌ Extensão Recusada",
+                description=(
+                    "Um dos usuários preferiu não estender o tempo.\n\n"
+                    "💫 Obrigado por usar o iTinder!\n"
+                    "🔍 **Você continua na fila procurando mais pessoas!**"
+                ),
+                color=0xFF9999
+            )
+            await interaction.response.send_message(embed=embed)
+            
+            u1 = data.get("u1")
+            u2 = data.get("u2")
+            if u1 and u2:
+                set_pair_cooldown(u1, u2)
+            
+            await asyncio.sleep(2)
+            await encerrar_canal_e_cleanup(self.canal)
+        except Exception:
+            pass
 
 class GenderSetupView(discord.ui.View):
     def __init__(self, setup_message):
@@ -734,7 +811,7 @@ class ConversationView(discord.ui.View):
                     f"{self.u1.display_name} {'✅' if self.u1.id in accepted else '⏳'}\n"
                     f"{self.u2.display_name} {'✅' if self.u2.id in accepted else '⏳'}\n\n"
                     f"⏰ **Aguardando ambos aceitarem...**\n"
-                    f"⏳ **Chat será fechado em 5 minutos se ninguém aceitar**\n"
+                    f"⏳ **Chat será fechado em {ACCEPT_TIMEOUT//60} minutos se ninguém aceitar**\n"
                     "💡 **Lembrete:** 10 minutos de conversa após aceitar"
                 ),
                 color=0xFF6B9E
