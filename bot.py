@@ -11,6 +11,7 @@ intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
 intents.guilds = True
+intents.voice_states = True  # Adicionado para calls de voz
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
@@ -66,6 +67,45 @@ def gerar_nome_canal(guild):
             return candidate
         i += 1
 
+def gerar_nome_call(guild):
+    base = "call-secreta"
+    existing = {c.name for c in guild.voice_channels}
+    if base not in existing:
+        return base
+    i = 1
+    while True:
+        candidate = f"{base}-{i}"
+        if candidate not in existing:
+            return candidate
+        i += 1
+
+async def criar_call_secreta(guild, u1, u2):
+    """Cria uma call de voz temporária para o par"""
+    nome_call = gerar_nome_call(guild)
+    
+    categoria = discord.utils.get(guild.categories, name="iTinder")
+    if not categoria:
+        try:
+            categoria = await guild.create_category("iTinder")
+        except Exception:
+            categoria = None
+    
+    overwrites = {
+        guild.default_role: discord.PermissionOverwrite(view_channel=False, connect=False),
+        guild.me: discord.PermissionOverwrite(view_channel=True, connect=True, manage_channels=True),
+        u1: discord.PermissionOverwrite(view_channel=True, connect=True, speak=True),
+        u2: discord.PermissionOverwrite(view_channel=True, connect=True, speak=True),
+    }
+    
+    try:
+        if categoria:
+            call_channel = await categoria.create_voice_channel(nome_call, overwrites=overwrites, reason="Call iTinder temporária")
+        else:
+            call_channel = await guild.create_voice_channel(nome_call, overwrites=overwrites, reason="Call iTinder temporária")
+        return call_channel
+    except Exception:
+        return None
+
 async def encerrar_canal_e_cleanup(canal):
     try:
         cid = canal.id
@@ -77,6 +117,15 @@ async def encerrar_canal_e_cleanup(canal):
                 active_users.discard(u1)
             if u2:
                 active_users.discard(u2)
+            
+            # Encerra a call associada se existir
+            call_channel = data.get("call_channel")
+            if call_channel:
+                try:
+                    await call_channel.delete()
+                except:
+                    pass
+            
             try:
                 del active_channels[cid]
             except Exception:
@@ -152,11 +201,15 @@ async def tentar_formar_dupla(guild):
                 except Exception:
                     categoria = None
             
+            # Obtém o dono do servidor
+            owner = guild.owner
+            
             overwrites = {
                 guild.default_role: discord.PermissionOverwrite(view_channel=False),
                 guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True),
                 u1: discord.PermissionOverwrite(view_channel=True, send_messages=False),
                 u2: discord.PermissionOverwrite(view_channel=True, send_messages=False),
+                owner: discord.PermissionOverwrite(view_channel=True, send_messages=False),  # Dono pode apenas ver
             }
             
             try:
@@ -177,7 +230,9 @@ async def tentar_formar_dupla(guild):
                 "accepted": set(),
                 "message_id": None,
                 "created_at": time.time(),
-                "started": False
+                "started": False,
+                "call_channel": None,  # Inicialmente sem call
+                "warning_sent": False  # Para controlar o aviso de 1 minuto
             }
             
             gender1_display = get_gender_display(gender1)
@@ -190,6 +245,7 @@ async def tentar_formar_dupla(guild):
                     "📋 **Como funciona:**\n"
                     "• Ambos precisam aceitar para começar a conversar\n"
                     "• ⏰ **10 minutos** de conversa após aceitar\n"
+                    "• 🎧 **Call secreta** disponível durante o chat\n"
                     "• ❌ Se recusar: **5 minutos** de espera para encontrar a mesma pessoa\n"
                     "• ⏳ **Chat será fechado em 1 minuto se ninguém aceitar**\n"
                     "• 🔒 Chat totalmente anônimo e privado\n\n"
@@ -213,6 +269,7 @@ async def tentar_formar_dupla(guild):
                 f"Você foi levado para {canal.mention}\n"
                 "📝 **Lembrete:**\n"
                 "• ⏰ 10 minutos de conversa\n"
+                "• 🎧 Call secreta disponível\n"
                 "• ❌ Recusar = 5 minutos de espera\n"
                 "• ⏳ **Aceite em 1 minuto ou o chat será fechado**\n"
                 "• 💬 Chat anônimo e seguro"
@@ -261,7 +318,33 @@ async def _accept_timeout_handler(canal, timeout=ACCEPT_TIMEOUT):
             await encerrar_canal_e_cleanup(canal)
 
 async def _auto_close_channel_after(canal, segundos=CHANNEL_DURATION):
-    await asyncio.sleep(segundos)
+    # Aviso de 1 minuto antes do fim
+    await asyncio.sleep(segundos - 60)  # 9 minutos (aviso com 1 minuto restante)
+    
+    if canal.id not in active_channels:
+        return
+    
+    data = active_channels.get(canal.id)
+    if data and not data.get("warning_sent", False):
+        try:
+            embed = discord.Embed(
+                title="⏰ Aviso: Chat Terminando",
+                description=(
+                    "**⚠️ O chat termina em 1 minuto!**\n\n"
+                    "⏳ **Tempo restante:** 1 minuto\n"
+                    "💡 **Dica:** Troquem contatos se quiserem continuar a conversa!\n"
+                    "🔒 O chat será automaticamente fechado em 60 segundos."
+                ),
+                color=0xFFA500  # Laranja para aviso
+            )
+            await canal.send(embed=embed)
+            active_channels[canal.id]["warning_sent"] = True
+        except Exception:
+            pass
+    
+    # Espera o último minuto e encerra
+    await asyncio.sleep(60)
+    
     if canal.id not in active_channels:
         return
     try:
@@ -418,6 +501,7 @@ class IndividualView(discord.ui.View):
                     "❌ **Você precisa configurar seu perfil primeiro!**\n\n"
                     "📋 **COMO FUNCIONA:**\n"
                     "• ⏰ **10 minutos** de conversa por par\n"
+                    "• 🎧 **Call secreta** durante o chat\n"
                     "• ❌ Recusar alguém = **5 minutos** de espera\n"
                     "• 🔍 Encontre pessoas por preferência\n"
                     "• 💬 Chat 100% anônimo\n\n"
@@ -513,6 +597,7 @@ class IndividualView(discord.ui.View):
                 "🔍 **Procurando alguém compatível...**\n\n"
                 "📝 **Lembretes:**\n"
                 "• ⏰ 10 minutos de conversa\n"
+                "• 🎧 Call secreta disponível\n"
                 "• ❌ Recusar = 5 minutos de espera\n"
                 "• 💬 Chat anônimo"
             ),
@@ -577,6 +662,7 @@ class TicketView(discord.ui.View):
                     "❌ **Você precisa configurar seu perfil primeiro!**\n\n"
                     "📋 **COMO FUNCIONA:**\n"
                     "• ⏰ **10 minutos** de conversa por par\n"
+                    "• 🎧 **Call secreta** durante o chat\n"
                     "• ❌ Recusar alguém = **5 minutos** de espera\n"
                     "• 🔍 Encontre pessoas por preferência\n"
                     "• 💬 Chat 100% anônimo\n\n"
@@ -673,6 +759,7 @@ class ConversationView(discord.ui.View):
                         f"{self.u1.mention} e {self.u2.mention}\n\n"
                         "🎉 **A conversa foi liberada!**\n"
                         "⏰ **Tempo:** 10 minutos\n"
+                        "🎧 **Call secreta:** Disponível durante o chat\n"
                         "💬 **Chat:** Anônimo e privado\n\n"
                         "🌟 **Dica:** Sejam criativos e respeitosos!\n"
                         "📝 Compartilhem interesses, sonhos, histórias..."
@@ -724,7 +811,42 @@ class EncerrarView(discord.ui.View):
         self.u1 = u1
         self.u2 = u2
 
-    @discord.ui.button(label="🔒 Encerrar Agora", style=discord.ButtonStyle.danger, custom_id="encerrar_agora")
+    @discord.ui.button(label="🎧 Criar Call", style=discord.ButtonStyle.secondary, custom_id="criar_call")
+    async def criar_call(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id not in (self.u1.id, self.u2.id):
+            await interaction.response.send_message("❌ Você não pode criar calls aqui.", ephemeral=True)
+            return
+
+        data = active_channels.get(self.canal.id)
+        if not data:
+            await interaction.response.send_message("❌ Estado inválido.", ephemeral=True)
+            return
+
+        # Verifica se já existe uma call
+        if data.get("call_channel"):
+            await interaction.response.send_message("❌ Já existe uma call ativa para este chat.", ephemeral=True)
+            return
+
+        # Cria a call secreta
+        call_channel = await criar_call_secreta(interaction.guild, self.u1, self.u2)
+        if call_channel:
+            data["call_channel"] = call_channel
+            embed = discord.Embed(
+                title="🎧 Call Secreta Criada!",
+                description=(
+                    f"**Call criada com sucesso!**\n\n"
+                    f"📞 **Canal:** {call_channel.mention}\n"
+                    f"👥 **Participantes:** {self.u1.mention} e {self.u2.mention}\n\n"
+                    "💡 **A call será automaticamente encerrada quando o chat terminar.**\n"
+                    "⚠️ **Lembrete:** A call é totalmente anônima e segura."
+                ),
+                color=0x66FF99
+            )
+            await interaction.response.send_message(embed=embed)
+        else:
+            await interaction.response.send_message("❌ Erro ao criar a call secreta.", ephemeral=True)
+
+    @discord.ui.button(label="🔒 Encerrar Chat", style=discord.ButtonStyle.danger, custom_id="encerrar_agora")
     async def encerrar(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id not in (self.u1.id, self.u2.id):
             await interaction.response.send_message("❌ Você não pode encerrar.", ephemeral=True)
@@ -790,6 +912,7 @@ async def setupcarente(interaction: discord.Interaction):
             "🔒 **Sistema totalmente anônimo e seguro**\n\n"
             "📋 **COMO FUNCIONA:**\n"
             "• ⏰ **10 minutos** de conversa por par\n"
+            "• 🎧 **Call secreta** durante o chat\n"
             "• ❌ Recusar alguém = **5 minutos** de espera para encontrar a mesma pessoa\n"
             "• 🔍 Encontre pessoas por preferência\n"
             "• 💬 Chat 100% anônimo\n\n"
@@ -844,10 +967,34 @@ async def on_guild_channel_delete(channel):
             active_users.discard(u1)
         if u2:
             active_users.discard(u2)
+        
+        # Encerra a call associada se existir
+        call_channel = data.get("call_channel")
+        if call_channel:
+            try:
+                await call_channel.delete()
+            except:
+                pass
+        
         try:
             del active_channels[cid]
         except Exception:
             pass
+
+@bot.event
+async def on_voice_state_update(member, before, after):
+    """Monitora calls secretas para limpeza automática"""
+    # Se um usuário saiu de uma call que está no active_channels
+    if before.channel and before.channel != after.channel:
+        for cid, data in active_channels.items():
+            if data.get("call_channel") and data["call_channel"].id == before.channel.id:
+                # Verifica se a call está vazia
+                if len(before.channel.members) == 0:
+                    try:
+                        await before.channel.delete()
+                        data["call_channel"] = None
+                    except:
+                        pass
 
 @bot.event
 async def on_interaction(interaction: discord.Interaction):
