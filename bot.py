@@ -22,7 +22,7 @@ user_genders = {}
 user_preferences = {}
 PAIR_COOLDOWNS = {}
 PAIR_COOLDOWN_SECONDS = 3600  # 1 hora de cooldown
-ACCEPT_TIMEOUT = 300  # 5 minutos para aceitar/recusar
+ACCEPT_TIMEOUT = 300  # 5 minutos para aceitar/recusar (alterado de 100 segundos)
 CHANNEL_DURATION = 10 * 60  # 10 minutos de conversa
 
 setup_channel_id = None
@@ -270,7 +270,7 @@ async def tentar_formar_dupla(guild):
                 aviso_pv_text = (
                     "💌 **🎉 PAR ENCONTRADO NO iTINDER! 🎉**\n\n"
                     f"**Encontramos alguém compatível para você!**\n\n"
-                    f"👤 **Seu par:** {u2.display_name if u1_id == u1.id else u1.display_name}\n"
+                    f"👤 **Seu par:** {u2.display_name if interaction.user.id == u1_id else u1.display_name}\n"
                     f"📍 **Canal do chat:** {canal.mention}\n\n"
                     "📝 **Para começar a conversar:**\n"
                     "1. Vá para o canal do chat acima\n"
@@ -621,8 +621,15 @@ class IndividualView(discord.ui.View):
             message = await interaction.response.send_message(embed=embed, view=LeaveQueueView(user.id), ephemeral=True)
             if hasattr(message, 'message'):
                 user_messages[user.id] = message.message
-            else:
-                user_messages[user.id] = await interaction.original_response()
+                if user.id in user_messages:
+    await user_messages[user.id].edit(embed=embed, view=LeaveQueueView(user.id))
+    await interaction.response.defer()
+else:
+    message = await interaction.response.send_message(embed=embed, view=LeaveQueueView(user.id), ephemeral=True)
+    if hasattr(message, 'message'):
+        user_messages[user.id] = message.message
+    else:
+        user_messages[user.id] = await interaction.original_response()  # Linha 624 corrigida
 
 class TicketView(discord.ui.View):
     def __init__(self):
@@ -1019,4 +1026,4 @@ if __name__ == "__main__":
     if not token:
         print("❌ Token não encontrado!")
     else:
-        bot.run(token)
+        bot.run(token),
