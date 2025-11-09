@@ -621,15 +621,8 @@ class IndividualView(discord.ui.View):
             message = await interaction.response.send_message(embed=embed, view=LeaveQueueView(user.id), ephemeral=True)
             if hasattr(message, 'message'):
                 user_messages[user.id] = message.message
-                if user.id in user_messages:
-    await user_messages[user.id].edit(embed=embed, view=LeaveQueueView(user.id))
-    await interaction.response.defer()
-else:
-    message = await interaction.response.send_message(embed=embed, view=LeaveQueueView(user.id), ephemeral=True)
-    if hasattr(message, 'message'):
-        user_messages[user.id] = message.message
-    else:
-        user_messages[user.id] = await interaction.original_response()  # Linha 624 corrigida
+            else:
+                user_messages[user.id] = await interaction.original_response()
 
 class TicketView(discord.ui.View):
     def __init__(self):
@@ -1026,4 +1019,4 @@ if __name__ == "__main__":
     if not token:
         print("❌ Token não encontrado!")
     else:
-        bot.run(token),
+        bot.run(token)
