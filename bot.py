@@ -56,7 +56,7 @@ def can_pair(u1_id, u2_id):
 def set_pair_cooldown(u1_id, u2_id):
     key = pair_key(u1_id, u2_id)
     PAIR_COOLDOWNS[key] = time.time() + PAIR_COOLDOWN_SECONDS
-    print(f"⏰ Cooldown setado para {u1_id} e {u2_id} por 1 hora")
+    print(f"🔒 Cooldown setado para {u1_id} e {u2_id} até {PAIR_COOLDOWNS[key]}")
 
 def gerar_nome_canal(guild, user1_id, user2_id):
     """Gera nome do canal com os nomes dos usuários"""
@@ -152,6 +152,12 @@ async def tentar_formar_dupla(guild):
         if len(usuarios_na_fila) < 2:
             continue
 
+        # Limpar cooldowns expirados
+        current_time = time.time()
+        expired_keys = [key for key, expiry in PAIR_COOLDOWNS.items() if current_time >= expiry]
+        for key in expired_keys:
+            del PAIR_COOLDOWNS[key]
+
         for i in range(len(usuarios_na_fila)):
             for j in range(i + 1, len(usuarios_na_fila)):
                 entry1 = usuarios_na_fila[i]
@@ -163,17 +169,13 @@ async def tentar_formar_dupla(guild):
                 if not user_queues.get(u1_id, False) or not user_queues.get(u2_id, False):
                     continue
                 
-                # Verifica se já existe um canal ativo entre esses dois usuários
+                # Verificar se já estão em um canal ativo juntos
                 if any(channel_data.get("u1") == u1_id and channel_data.get("u2") == u2_id or 
                        channel_data.get("u1") == u2_id and channel_data.get("u2") == u1_id 
                        for channel_data in active_channels.values()):
                     continue
                 
-                # Verifica cooldown ANTES de verificar compatibilidade
-                if not can_pair(u1_id, u2_id):
-                    print(f"⏰ Cooldown ativo entre {u1_id} e {u2_id} - pulando par")
-                    continue
-                
+                # Verificar compatibilidade
                 pref1 = entry1["preference"]
                 pref2 = entry2["preference"]
                 gender1 = entry1["gender"]
@@ -186,11 +188,18 @@ async def tentar_formar_dupla(guild):
                 
                 if not compatible:
                     continue
+                    
+                # VERIFICAR COOLDOWN - AGORA FUNCIONANDO CORRETAMENTE
+                if not can_pair(u1_id, u2_id):
+                    print(f"⏳ Cooldown ativo para {u1_id} e {u2_id}")
+                    continue
 
                 u1 = guild.get_member(u1_id)
                 u2 = guild.get_member(u2_id)
                 if not u1 or not u2:
                     continue
+                
+                print(f"🎯 Tentando formar par: {u1.display_name} e {u2.display_name}")
                 
                 nome_canal = gerar_nome_canal(guild, u1_id, u2_id)
         
@@ -293,7 +302,7 @@ async def _accept_timeout_handler(canal, timeout=ACCEPT_TIMEOUT):
             u2 = data.get("u2")
             if u1 and u2:
                 set_pair_cooldown(u1, u2)
-                print(f"⏰ Cooldown setado por timeout: {u1} e {u2}")
+                print(f"⏰ Timeout: Cooldown setado para {u1} e {u2}")
             
             try:
                 msg = await canal.fetch_message(data["message_id"])
@@ -347,7 +356,7 @@ async def _auto_close_channel_after(canal, segundos=CHANNEL_DURATION):
             u2 = data.get("u2")
             if u1 and u2:
                 set_pair_cooldown(u1, u2)
-                print(f"⏰ Cooldown setado por fim de conversa: {u1} e {u2}")
+                print(f"⏰ Chat finalizado: Cooldown setado para {u1} e {u2}")
             
             try:
                 msg = await canal.fetch_message(data["message_id"])
@@ -578,8 +587,8 @@ class IndividualView(discord.ui.View):
             message = await interaction.response.send_message(embed=embed, view=LeaveQueueView(user.id), ephemeral=True)
             if hasattr(message, 'message'):
                 user_messages[user.id] = message.message
-                else:
-                    user_messages[user.id] = await interaction.original_response()
+            else:
+                user_messages[user.id] = await interaction.original_response()
 
 class TicketView(discord.ui.View):
     def __init__(self):
@@ -741,7 +750,7 @@ class ConversationView(discord.ui.View):
             return
 
         set_pair_cooldown(self.u1.id, self.u2.id)
-        print(f"⏰ Cooldown setado por recusa: {self.u1.id} e {self.u2.id}")
+        print(f"❌ Recusa: Cooldown setado para {self.u1.id} e {self.u2.id}")
         
         try:
             msg = await self.canal.fetch_message(self.message_id)
@@ -812,10 +821,10 @@ class EncerrarView(discord.ui.View):
         u1_id = data.get("u1") if data else None
         u2_id = data.get("u2") if data else None
         
-        # Aplica cooldown quando o usuário encerra manualmente
+        # SETAR COOLDOWN AO ENCERRAR MANUALMENTE
         if u1_id and u2_id:
             set_pair_cooldown(u1_id, u2_id)
-            print(f"⏰ Cooldown setado por encerramento manual: {u1_id} e {u2_id}")
+            print(f"🔒 Encerramento manual: Cooldown setado para {u1_id} e {u2_id}")
         
         try:
             msg = None
