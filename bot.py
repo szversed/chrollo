@@ -29,6 +29,7 @@ setup_channel_id = None
 canal_bloqueado = False
 main_message_id = None  # ID da mensagem principal fixa
 user_messages = {}  # Dicionário para armazenar a mensagem individual de cada usuário
+user_queues = {}  # Controla se o usuário está ativamente na fila
 
 def get_gender_display(gender):
     return "👨🏻 Anônimo" if gender == "homem" else "👩🏻 Anônima"
@@ -55,8 +56,8 @@ def set_pair_cooldown(u1_id, u2_id):
     key = pair_key(u1_id, u2_id)
     PAIR_COOLDOWNS[key] = time.time() + PAIR_COOLDOWN_SECONDS
 
-def gerar_nome_canal(guild):
-    base = "chat-secreto"
+def gerar_nome_canal(guild, user1_id, user2_id):
+    base = f"chat-{user1_id}-{user2_id}"[-20:]  # Nome único baseado nos IDs
     existing = {c.name for c in guild.text_channels}
     if base not in existing:
         return base
@@ -113,10 +114,7 @@ async def encerrar_canal_e_cleanup(canal):
         if data:
             u1 = data.get("u1")
             u2 = data.get("u2")
-            if u1:
-                active_users.discard(u1)
-            if u2:
-                active_users.discard(u2)
+            # NÃO remove de active_users aqui - o usuário pode continuar na fila
             
             # Encerra a call associada se existir
             call_channel = data.get("call_channel")
@@ -138,153 +136,157 @@ async def encerrar_canal_e_cleanup(canal):
         pass
 
 async def tentar_formar_dupla(guild):
-    if len(fila_carentes) < 2:
-        return
+    """Tenta formar pares continuamente para usuários na fila"""
+    while True:
+        await asyncio.sleep(2)  # Verifica a cada 2 segundos
+        
+        # Filtra usuários que ainda estão ativamente na fila
+        usuarios_na_fila = [entry for entry in fila_carentes if user_queues.get(entry["user_id"], False)]
+        
+        if len(usuarios_na_fila) < 2:
+            continue
 
-    for i in range(len(fila_carentes)):
-        for j in range(i + 1, len(fila_carentes)):
-            entry1 = fila_carentes[i]
-            entry2 = fila_carentes[j]
-            
-            u1_id = entry1["user_id"]
-            u2_id = entry2["user_id"]
-            
-            pref1 = entry1["preference"]
-            pref2 = entry2["preference"]
-            gender1 = entry1["gender"]
-            gender2 = entry2["gender"]
-            
-            compatible = False
-            if pref1 == gender2 or pref1 == "ambos":
-                if pref2 == gender1 or pref2 == "ambos":
-                    compatible = True
-            
-            if not compatible:
-                continue
+        for i in range(len(usuarios_na_fila)):
+            for j in range(i + 1, len(usuarios_na_fila)):
+                entry1 = usuarios_na_fila[i]
+                entry2 = usuarios_na_fila[j]
                 
-            if u1_id in active_users or u2_id in active_users:
-                continue
-            if not can_pair(u1_id, u2_id):
-                continue
+                u1_id = entry1["user_id"]
+                u2_id = entry2["user_id"]
+                
+                # Verifica se ambos ainda estão ativamente na fila
+                if not user_queues.get(u1_id, False) or not user_queues.get(u2_id, False):
+                    continue
+                
+                # Verifica se não estão já em um chat juntos
+                if any(channel_data.get("u1") == u1_id and channel_data.get("u2") == u2_id or 
+                       channel_data.get("u1") == u2_id and channel_data.get("u2") == u1_id 
+                       for channel_data in active_channels.values()):
+                    continue
+                
+                pref1 = entry1["preference"]
+                pref2 = entry2["preference"]
+                gender1 = entry1["gender"]
+                gender2 = entry2["gender"]
+                
+                compatible = False
+                if pref1 == gender2 or pref1 == "ambos":
+                    if pref2 == gender1 or pref2 == "ambos":
+                        compatible = True
+                
+                if not compatible:
+                    continue
+                    
+                if not can_pair(u1_id, u2_id):
+                    continue
 
-            try:
-                fila_carentes.remove(entry1)
-                fila_carentes.remove(entry2)
-            except ValueError:
-                pass
-            
-            u1 = guild.get_member(u1_id)
-            u2 = guild.get_member(u2_id)
-            if not u1 or not u2:
-                continue
-            
-            # APAGA as mensagens individuais dos usuários
-            if u1_id in user_messages:
+                # Remove da fila temporariamente durante a formação do par
                 try:
-                    await user_messages[u1_id].delete()
-                    del user_messages[u1_id]
-                except:
-                    pass
-            if u2_id in user_messages:
+                    fila_carentes.remove(entry1)
+                    fila_carentes.remove(entry2)
+                except ValueError:
+                    continue
+                
+                u1 = guild.get_member(u1_id)
+                u2 = guild.get_member(u2_id)
+                if not u1 or not u2:
+                    # Se não encontrou os membros, recoloca na fila
+                    fila_carentes.append(entry1)
+                    fila_carentes.append(entry2)
+                    continue
+                
+                nome_canal = gerar_nome_canal(guild, u1_id, u2_id)
+        
+                categoria = discord.utils.get(guild.categories, name="iTinder")
+                if not categoria:
+                    try:
+                        categoria = await guild.create_category("iTinder")
+                    except Exception:
+                        categoria = None
+                
+                # Obtém o dono do servidor
+                owner = guild.owner
+                
+                overwrites = {
+                    guild.default_role: discord.PermissionOverwrite(view_channel=False),
+                    guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True),
+                    u1: discord.PermissionOverwrite(view_channel=True, send_messages=False),
+                    u2: discord.PermissionOverwrite(view_channel=True, send_messages=False),
+                    owner: discord.PermissionOverwrite(view_channel=True, send_messages=False),  # Dono pode apenas ver
+                }
+                
                 try:
-                    await user_messages[u2_id].delete()
-                    del user_messages[u2_id]
-                except:
-                    pass
-            
-            nome_canal = gerar_nome_canal(guild)
-    
-            categoria = discord.utils.get(guild.categories, name="iTinder")
-            if not categoria:
-                try:
-                    categoria = await guild.create_category("iTinder")
+                    if categoria:
+                        canal = await categoria.create_text_channel(nome_canal, overwrites=overwrites, reason="Canal iTinder temporário")
+                    else:
+                        canal = await guild.create_text_channel(nome_canal, overwrites=overwrites, reason="Canal iTinder temporário")
                 except Exception:
-                    categoria = None
-            
-            # Obtém o dono do servidor
-            owner = guild.owner
-            
-            overwrites = {
-                guild.default_role: discord.PermissionOverwrite(view_channel=False),
-                guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True),
-                u1: discord.PermissionOverwrite(view_channel=True, send_messages=False),
-                u2: discord.PermissionOverwrite(view_channel=True, send_messages=False),
-                owner: discord.PermissionOverwrite(view_channel=True, send_messages=False),  # Dono pode apenas ver
-            }
-            
-            try:
-                if categoria:
-                    canal = await categoria.create_text_channel(nome_canal, overwrites=overwrites, reason="Canal iTinder temporário")
-                else:
-                    canal = await guild.create_text_channel(nome_canal, overwrites=overwrites, reason="Canal iTinder temporário")
-            except Exception:
-                fila_carentes.append(entry1)
-                fila_carentes.append(entry2)
-                return
-            
-            active_users.add(u1_id)
-            active_users.add(u2_id)
-            active_channels[canal.id] = {
-                "u1": u1_id,
-                "u2": u2_id,
-                "accepted": set(),
-                "message_id": None,
-                "created_at": time.time(),
-                "started": False,
-                "call_channel": None,  # Inicialmente sem call
-                "warning_sent": False  # Para controlar o aviso de 1 minuto
-            }
-            
-            gender1_display = get_gender_display(gender1)
-            gender2_display = get_gender_display(gender2)
-            
-            embed = discord.Embed(
-                title="💌 iTinder - Par Encontrado!",
-                description=(
-                    f"**{u1.mention}** ({gender1_display}) & **{u2.mention}** ({gender2_display})\n\n"
-                    "📋 **Como funciona:**\n"
-                    "• Ambos precisam aceitar para começar a conversar\n"
-                    "• ⏰ **10 minutos** de conversa após aceitar\n"
-                    "• 🎧 **Call secreta** disponível durante o chat\n"
-                    "• ❌ Se recusar: **5 minutos** de espera para encontrar a mesma pessoa\n"
-                    "• ⏳ **Chat será fechado em 1 minuto se ninguém aceitar**\n"
-                    "• 🔒 Chat totalmente anônimo e privado\n\n"
-                    "💡 **Dica:** Sejam respeitosos e aproveitem a conversa!"
-                ),
-                color=0xFF6B9E
-            )
-            view = ConversationView(canal, u1, u2, message_id=0)
-            try:
-                msg = await canal.send(embed=embed, view=view)
-                active_channels[canal.id]["message_id"] = msg.id
-                view.message_id = msg.id
-            except Exception:
-                await encerrar_canal_e_cleanup(canal)
-                fila_carentes.append(entry1)
-                fila_carentes.append(entry2)
-                return
-            
-            aviso_text = (
-                "💌 **Par encontrado no iTinder!**\n\n"
-                f"Você foi levado para {canal.mention}\n"
-                "📝 **Lembrete:**\n"
-                "• ⏰ 10 minutos de conversa\n"
-                "• 🎧 Call secreta disponível\n"
-                "• ❌ Recusar = 5 minutos de espera\n"
-                "• ⏳ **Aceite em 1 minuto ou o chat será fechado**\n"
-                "• 💬 Chat anônimo e seguro"
-            )
-            try:
-                await u1.send(aviso_text)
-            except Exception:
-                pass
-            try:
-                await u2.send(aviso_text)
-            except Exception:
-                pass
-            
-            asyncio.create_task(_accept_timeout_handler(canal))
-            return
+                    fila_carentes.append(entry1)
+                    fila_carentes.append(entry2)
+                    continue
+                
+                active_channels[canal.id] = {
+                    "u1": u1_id,
+                    "u2": u2_id,
+                    "accepted": set(),
+                    "message_id": None,
+                    "created_at": time.time(),
+                    "started": False,
+                    "call_channel": None,  # Inicialmente sem call
+                    "warning_sent": False  # Para controlar o aviso de 1 minuto
+                }
+                
+                gender1_display = get_gender_display(gender1)
+                gender2_display = get_gender_display(gender2)
+                
+                embed = discord.Embed(
+                    title="💌 iTinder - Par Encontrado!",
+                    description=(
+                        f"**{u1.mention}** ({gender1_display}) & **{u2.mention}** ({gender2_display})\n\n"
+                        "📋 **Como funciona:**\n"
+                        "• Ambos precisam aceitar para começar a conversar\n"
+                        "• ⏰ **10 minutos** de conversa após aceitar\n"
+                        "• 🎧 **Call secreta** disponível durante o chat\n"
+                        "• ❌ Se recusar: **5 minutos** de espera para encontrar a mesma pessoa\n"
+                        "• ⏳ **Chat será fechado em 1 minuto se ninguém aceitar**\n"
+                        "• 🔒 Chat totalmente anônimo e privado\n\n"
+                        "💡 **Dica:** Sejam respeitosos e aproveitem a conversa!"
+                    ),
+                    color=0xFF6B9E
+                )
+                view = ConversationView(canal, u1, u2, message_id=0)
+                try:
+                    msg = await canal.send(embed=embed, view=view)
+                    active_channels[canal.id]["message_id"] = msg.id
+                    view.message_id = msg.id
+                except Exception:
+                    await encerrar_canal_e_cleanup(canal)
+                    fila_carentes.append(entry1)
+                    fila_carentes.append(entry2)
+                    continue
+                
+                aviso_text = (
+                    "💌 **Novo par encontrado no iTinder!**\n\n"
+                    f"Você foi levado para {canal.mention}\n"
+                    "📝 **Lembrete:**\n"
+                    "• ⏰ 10 minutos de conversa\n"
+                    "• 🎧 Call secreta disponível\n"
+                    "• ❌ Recusar = 5 minutos de espera\n"
+                    "• ⏳ **Aceite em 1 minuto ou o chat será fechado**\n"
+                    "• 💬 Chat anônimo e seguro\n\n"
+                    "🔍 **Você continua na fila procurando mais pessoas!**"
+                )
+                try:
+                    await u1.send(aviso_text)
+                except Exception:
+                    pass
+                try:
+                    await u2.send(aviso_text)
+                except Exception:
+                    pass
+                
+                asyncio.create_task(_accept_timeout_handler(canal))
+                break  # Sai do loop interno após formar um par
 
 async def _accept_timeout_handler(canal, timeout=ACCEPT_TIMEOUT):
     await asyncio.sleep(timeout)
@@ -299,6 +301,24 @@ async def _accept_timeout_handler(canal, timeout=ACCEPT_TIMEOUT):
             u2 = data.get("u2")
             if u1 and u2:
                 set_pair_cooldown(u1, u2)
+                # Recoloca os usuários na fila se ainda estiverem ativos
+                if user_queues.get(u1, False):
+                    user_entry = {
+                        "user_id": u1,
+                        "gender": user_genders.get(u1, "homem"),
+                        "preference": user_preferences.get(u1, "ambos")
+                    }
+                    if user_entry not in fila_carentes:
+                        fila_carentes.append(user_entry)
+                
+                if user_queues.get(u2, False):
+                    user_entry = {
+                        "user_id": u2,
+                        "gender": user_genders.get(u2, "homem"),
+                        "preference": user_preferences.get(u2, "ambos")
+                    }
+                    if user_entry not in fila_carentes:
+                        fila_carentes.append(user_entry)
             
             try:
                 msg = await canal.fetch_message(data["message_id"])
@@ -350,6 +370,28 @@ async def _auto_close_channel_after(canal, segundos=CHANNEL_DURATION):
     try:
         data = active_channels.get(canal.id)
         if data:
+            u1 = data.get("u1")
+            u2 = data.get("u2")
+            
+            # Recoloca os usuários na fila se ainda estiverem ativos
+            if user_queues.get(u1, False):
+                user_entry = {
+                    "user_id": u1,
+                    "gender": user_genders.get(u1, "homem"),
+                    "preference": user_preferences.get(u1, "ambos")
+                }
+                if user_entry not in fila_carentes:
+                    fila_carentes.append(user_entry)
+            
+            if user_queues.get(u2, False):
+                user_entry = {
+                    "user_id": u2,
+                    "gender": user_genders.get(u2, "homem"),
+                    "preference": user_preferences.get(u2, "ambos")
+                }
+                if user_entry not in fila_carentes:
+                    fila_carentes.append(user_entry)
+            
             try:
                 msg = await canal.fetch_message(data["message_id"])
                 embed = discord.Embed(
@@ -357,7 +399,7 @@ async def _auto_close_channel_after(canal, segundos=CHANNEL_DURATION):
                     description=(
                         "Seus **10 minutos** de conversa terminaram!\n\n"
                         "💫 Esperamos que tenha sido uma boa experiência.\n"
-                        "Volte sempre ao iTinder! 💌"
+                        "🔍 **Você continua na fila procurando mais pessoas!**"
                     ),
                     color=0x9999FF
                 )
@@ -456,33 +498,31 @@ class LeaveQueueView(discord.ui.View):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message("❌ Isso é só para você.", ephemeral=True)
             return
-        removed = False
-        for entry in list(fila_carentes):
-            if entry["user_id"] == self.user_id:
-                fila_carentes.remove(entry)
-                removed = True
-                break
         
-        if removed:
-            # Atualiza a MESMA mensagem individual do usuário
-            user_id = interaction.user.id
-            if user_id in user_messages:
-                embed = discord.Embed(
-                    title="💌 iTinder - Saiu da Fila",
-                    description=(
-                        f"**🚪 Você saiu da fila!**\n\n"
-                        f"**Seu perfil:** {get_gender_display(user_genders.get(user_id, 'homem'))}\n"
-                        f"**Procurando:** {get_preference_display(user_preferences.get(user_id, 'ambos'))}\n\n"
-                        "💡 Volte ao canal principal para configurar perfil ou entrar na fila novamente!"
-                    ),
-                    color=0xFF9999
-                )
-                await user_messages[user_id].edit(embed=embed, view=IndividualView())
-                await interaction.response.defer()
-            else:
-                await interaction.response.send_message("❌ Mensagem não encontrada.", ephemeral=True)
+        # Remove da fila ativa
+        user_queues[interaction.user.id] = False
+        
+        # Remove todas as entradas do usuário na fila
+        fila_carentes[:] = [entry for entry in fila_carentes if entry["user_id"] != interaction.user.id]
+        
+        # Atualiza a MESMA mensagem individual do usuário
+        user_id = interaction.user.id
+        if user_id in user_messages:
+            embed = discord.Embed(
+                title="💌 iTinder - Saiu da Fila",
+                description=(
+                    f"**🚪 Você saiu da fila!**\n\n"
+                    f"**Seu perfil:** {get_gender_display(user_genders.get(user_id, 'homem'))}\n"
+                    f"**Procurando:** {get_preference_display(user_preferences.get(user_id, 'ambos'))}\n\n"
+                    "💡 Volte ao canal principal para configurar perfil ou entrar na fila novamente!\n\n"
+                    "🔍 **Você não está mais procurando novas pessoas.**"
+                ),
+                color=0xFF9999
+            )
+            await user_messages[user_id].edit(embed=embed, view=IndividualView())
+            await interaction.response.defer()
         else:
-            await interaction.response.send_message("❌ Você não estava na fila.", ephemeral=True)
+            await interaction.response.send_message("✅ Você saiu da fila.", ephemeral=True)
 
 # VIEW para o embed individual do usuário (SEM botão de Configurar Perfil)
 class IndividualView(discord.ui.View):
@@ -500,10 +540,10 @@ class IndividualView(discord.ui.View):
                 description=(
                     "❌ **Você precisa configurar seu perfil primeiro!**\n\n"
                     "📋 **COMO FUNCIONA:**\n"
+                    "• 🔍 **Procura contínua** - Encontre múltiplas pessoas\n"
                     "• ⏰ **10 minutos** de conversa por par\n"
                     "• 🎧 **Call secreta** durante o chat\n"
                     "• ❌ Recusar alguém = **5 minutos** de espera\n"
-                    "• 🔍 Encontre pessoas por preferência\n"
                     "• 💬 Chat 100% anônimo\n\n"
                     "⚙️ **Volte ao canal principal e clique em `Configurar Perfil`!**"
                 ),
@@ -523,83 +563,68 @@ class IndividualView(discord.ui.View):
                     user_messages[user.id] = await interaction.original_response()
             return
 
-        if user.id in active_users:
+        # Verifica se já está ativamente na fila
+        if user_queues.get(user.id, False):
             gender_display = get_gender_display(user_genders[user.id])
             preference_display = get_preference_display(user_preferences[user.id])
             
             embed = discord.Embed(
-                title="💌 iTinder - Chat Ativo",
+                title="💌 iTinder - Na Fila Ativamente",
                 description=(
-                    f"**💬 Você já está em um chat ativo!**\n\n"
+                    f"**🔍 Você já está procurando pessoas!**\n\n"
                     f"**Seu perfil:** {gender_display}\n"
                     f"**Procurando:** {preference_display}\n\n"
-                    "Aguarde o chat atual terminar para entrar na fila novamente."
+                    "⏳ **Procurando pessoas compatíveis...**\n\n"
+                    "💡 **Você pode:**\n"
+                    "• Conversar com múltiplas pessoas ao mesmo tempo\n"
+                    "• Cada chat dura 10 minutos\n"
+                    "• Clique em **Sair da Fila** para parar de procurar"
                 ),
-                color=0xFF9999
+                color=0x66FF99
             )
             
             # Atualiza a MESMA mensagem individual
             if user.id in user_messages:
-                await user_messages[user.id].edit(embed=embed, view=IndividualView())
+                await user_messages[user.id].edit(embed=embed, view=LeaveQueueView(user.id))
                 await interaction.response.defer()
             else:
-                message = await interaction.response.send_message(embed=embed, view=IndividualView(), ephemeral=True)
+                message = await interaction.response.send_message(embed=embed, view=LeaveQueueView(user.id), ephemeral=True)
                 if hasattr(message, 'message'):
                     user_messages[user.id] = message.message
                 else:
                     user_messages[user.id] = await interaction.original_response()
             return
-        
-        for entry in fila_carentes:
-            if entry["user_id"] == user.id:
-                gender_display = get_gender_display(user_genders[user.id])
-                preference_display = get_preference_display(user_preferences[user.id])
-                
-                embed = discord.Embed(
-                    title="💌 iTinder - Na Fila",
-                    description=(
-                        f"**⏳ Você já está na fila!**\n\n"
-                        f"**Seu perfil:** {gender_display}\n"
-                        f"**Procurando:** {preference_display}\n\n"
-                        "Aguarde enquanto encontramos alguém compatível..."
-                    ),
-                    color=0x66FF99
-                )
-                
-                # Atualiza a MESMA mensagem individual
-                if user.id in user_messages:
-                    await user_messages[user.id].edit(embed=embed, view=LeaveQueueView(user.id))
-                    await interaction.response.defer()
-                else:
-                    message = await interaction.response.send_message(embed=embed, view=LeaveQueueView(user.id), ephemeral=True)
-                    if hasattr(message, 'message'):
-                        user_messages[user.id] = message.message
-                    else:
-                        user_messages[user.id] = await interaction.original_response()
-                return
 
+        # Entra na fila ativamente
+        user_queues[user.id] = True
+        
         fila_entry = {
             "user_id": user.id,
             "gender": user_genders[user.id],
             "preference": user_preferences[user.id]
         }
+        
+        # Remove entradas antigas do usuário e adiciona a nova
+        fila_carentes[:] = [entry for entry in fila_carentes if entry["user_id"] != user.id]
         fila_carentes.append(fila_entry)
         
         gender_display = get_gender_display(user_genders[user.id])
         preference_display = get_preference_display(user_preferences[user.id])
         
         embed = discord.Embed(
-            title="💌 iTinder - Entrou na Fila",
+            title="💌 iTinder - Procurando Pessoas!",
             description=(
-                f"**✅ Entrou na Fila!**\n\n"
+                f"**🔍 Agora você está procurando pessoas!**\n\n"
                 f"**Seu perfil:** {gender_display}\n"
                 f"**Procurando:** {preference_display}\n\n"
-                "🔍 **Procurando alguém compatível...**\n\n"
-                "📝 **Lembretes:**\n"
-                "• ⏰ 10 minutos de conversa\n"
-                "• 🎧 Call secreta disponível\n"
-                "• ❌ Recusar = 5 minutos de espera\n"
-                "• 💬 Chat anônimo"
+                "🎯 **Modo de Procura Contínua Ativado**\n\n"
+                "📋 **Como funciona:**\n"
+                "• 🔍 **Procura contínua** por pessoas compatíveis\n"
+                "• 💬 **Chats simultâneos** com múltiplas pessoas\n"
+                "• ⏰ Cada chat dura **10 minutos**\n"
+                "• 🎧 **Call secreta** disponível\n"
+                "• ❌ Recusar = 5 minutos de espera\n\n"
+                "💡 **Você receberá novos chats automaticamente!**"
             ),
             color=0x66FF99
         )
@@ -614,8 +639,6 @@ class IndividualView(discord.ui.View):
                 user_messages[user.id] = message.message
             else:
                 user_messages[user.id] = await interaction.original_response()
-        
-        await tentar_formar_dupla(interaction.guild)
 
 # VIEW PRINCIPAL: Para o embed principal (COM botão de Configurar Perfil)
 class TicketView(discord.ui.View):
@@ -661,10 +684,10 @@ class TicketView(discord.ui.View):
                 description=(
                     "❌ **Você precisa configurar seu perfil primeiro!**\n\n"
                     "📋 **COMO FUNCIONA:**\n"
+                    "• 🔍 **Procura contínua** - Encontre múltiplas pessoas\n"
                     "• ⏰ **10 minutos** de conversa por par\n"
                     "• 🎧 **Call secreta** durante o chat\n"
                     "• ❌ Recusar alguém = **5 minutos** de espera\n"
-                    "• 🔍 Encontre pessoas por preferência\n"
                     "• 💬 Chat 100% anônimo\n\n"
                     "⚙️ **Clique em `Configurar Perfil` no canal principal!**"
                 ),
@@ -689,7 +712,8 @@ class TicketView(discord.ui.View):
                 f"**✅ Perfil Configurado!**\n\n"
                 f"**Seu perfil:** {gender_display}\n"
                 f"**Procurando:** {preference_display}\n\n"
-                "💡 Clique em **Entrar na Fila** para começar a procurar!"
+                "🎯 **Modo de Procura Contínua**\n\n"
+                "💡 Clique em **Entrar na Fila** para começar a procurar múltiplas pessoas!"
             ),
             color=0x66FF99
         )
@@ -701,6 +725,7 @@ class TicketView(discord.ui.View):
         else:
             user_messages[user.id] = await interaction.original_response()
 
+# (As classes ConversationView e EncerrarView permanecem as mesmas do código anterior)
 class ConversationView(discord.ui.View):
     def __init__(self, canal, u1, u2, message_id):
         super().__init__(timeout=None)
@@ -727,14 +752,13 @@ class ConversationView(discord.ui.View):
         
         try:
             msg = await self.canal.fetch_message(self.message_id)
-            # MUDADO: Em vez de ❌, usar ⏳ para mostrar que está aguardando
             embed = discord.Embed(
                 title="💌 iTinder - Confirmação",
                 description=(
                     f"{self.u1.mention} {'✅' if self.u1.id in accepted else '⏳'}\n"
                     f"{self.u2.mention} {'✅' if self.u2.id in accepted else '⏳'}\n\n"
                     "⏰ **Aguardando ambos aceitarem...**\n"
-                    "⏳ **Chat será fechado em 1 mimuto se ninguém aceitar**\n"
+                    "⏳ **Chat será fechado em 1 minuto se ninguém aceitar**\n"
                     "💡 **Lembrete:** 10 minutos de conversa após aceitar"
                 ),
                 color=0xFF6B9E
@@ -784,6 +808,25 @@ class ConversationView(discord.ui.View):
             return
 
         set_pair_cooldown(self.u1.id, self.u2.id)
+        
+        # Recoloca os usuários na fila se ainda estiverem ativos
+        if user_queues.get(self.u1.id, False):
+            user_entry = {
+                "user_id": self.u1.id,
+                "gender": user_genders.get(self.u1.id, "homem"),
+                "preference": user_preferences.get(self.u1.id, "ambos")
+            }
+            if user_entry not in fila_carentes:
+                fila_carentes.append(user_entry)
+        
+        if user_queues.get(self.u2.id, False):
+            user_entry = {
+                "user_id": self.u2.id,
+                "gender": user_genders.get(self.u2.id, "homem"),
+                "preference": user_preferences.get(self.u2.id, "ambos")
+            }
+            if user_entry not in fila_carentes:
+                fila_carentes.append(user_entry)
         
         try:
             msg = await self.canal.fetch_message(self.message_id)
@@ -866,7 +909,7 @@ class EncerrarView(discord.ui.View):
                     description=(
                         "O chat foi encerrado pelo usuário.\n\n"
                         "💫 Obrigado por usar o iTinder!\n"
-                        "Volte sempre para novas conversas! 💌"
+                        "🔍 **Você continua na fila procurando mais pessoas!**"
                     ),
                     color=0x9999FF
                 )
@@ -874,8 +917,8 @@ class EncerrarView(discord.ui.View):
         except Exception:
             pass
         
-        await encerrar_canal_e_cleanup(self.canal)
-        await interaction.response.send_message("✅ Chat encerrado.", ephemeral=True)
+        await encerrar_canal_e_cleanup(canal)
+        await interaction.response.send_message("✅ Chat encerrado. Você continua na fila!", ephemeral=True)
 
 @bot.tree.command(name="setupcarente", description="Configura o sistema iTinder (apenas admin)")
 async def setupcarente(interaction: discord.Interaction):
@@ -910,18 +953,18 @@ async def setupcarente(interaction: discord.Interaction):
         description=(
             "**Bem-vindo ao iTinder!** 🌟\n\n"
             "🔒 **Sistema totalmente anônimo e seguro**\n\n"
-            "📋 **COMO FUNCIONA:**\n"
-            "• ⏰ **10 minutos** de conversa por par\n"
+            "🎯 **NOVO: Procura Contínua!**\n"
+            "• 🔍 **Encontre múltiplas pessoas** simultaneamente\n"
+            "• 💬 **Vários chats ao mesmo tempo**\n"
+            "• ⏰ **10 minutos** por conversa\n"
             "• 🎧 **Call secreta** durante o chat\n"
-            "• ❌ Recusar alguém = **5 minutos** de espera para encontrar a mesma pessoa\n"
-            "• 🔍 Encontre pessoas por preferência\n"
-            "• 💬 Chat 100% anônimo\n\n"
+            "• ❌ Recusar = **5 minutos** de espera\n\n"
             "⚙️ **PASSO A PASSO:**\n"
             "1. Clique em `⚙️ Configurar Perfil`\n"
             "2. Escolha sua identidade e preferência\n"
             "3. Clique em `💌 Entrar na Fila`\n"
-            "4. Aguarde encontrar alguém compatível\n"
-            "5. Aceite o chat e converse por 10 minutos!\n\n"
+            "4. **Converse com várias pessoas!**\n"
+            "5. Clique em `Sair da Fila` quando quiser parar\n\n"
             "⚠️ **ESTE CANAL FOI BLOQUEADO**\n"
             "Apenas os botões abaixo funcionam aqui."
         ),
@@ -937,7 +980,25 @@ async def setupcarente(interaction: discord.Interaction):
     except Exception:
         await interaction.response.send_message("❌ Erro ao enviar mensagem de setup", ephemeral=True)
 
-# EVENTO: Quando uma mensagem é enviada no canal - APAGA mensagens de usuários
+# Inicia o loop de formação de duplas quando o bot liga
+@bot.event
+async def on_ready():
+    print(f"✅ iTinder online! Conectado como {bot.user.name}")
+    
+    guild = discord.Object(id=MINHA_GUILD_ID)
+    try:
+        bot.tree.copy_global_to(guild=guild)
+        await bot.tree.sync(guild=guild)
+        print("✅ Comandos sincronizados na guild!")
+    except Exception as e:
+        print(f"⚠️ Erro ao sincronizar comandos: {e}")
+    
+    # Inicia o loop contínuo de formação de duplas
+    guild_instance = bot.get_guild(MINHA_GUILD_ID)
+    if guild_instance:
+        asyncio.create_task(tentar_formar_dupla(guild_instance))
+
+# (Os outros eventos permanecem iguais)
 @bot.event
 async def on_message(message):
     if message.guild and message.guild.id == MINHA_GUILD_ID:
@@ -949,7 +1010,6 @@ async def on_message(message):
                     pass
     await bot.process_commands(message)
 
-# EVENTO: Quando um membro entra no servidor - NÃO FAZ NADA
 @bot.event
 async def on_member_join(member):
     pass
@@ -963,10 +1023,6 @@ async def on_guild_channel_delete(channel):
         data = active_channels.get(cid, {})
         u1 = data.get("u1")
         u2 = data.get("u2")
-        if u1:
-            active_users.discard(u1)
-        if u2:
-            active_users.discard(u2)
         
         # Encerra a call associada se existir
         call_channel = data.get("call_channel")
@@ -1004,35 +1060,6 @@ async def on_interaction(interaction: discord.Interaction):
                 await interaction.response.send_message("❌ Este bot não está disponível neste servidor.", ephemeral=True)
             return
     await bot.process_application_commands(interaction)
-
-# EVENTO: Apaga mensagens de sistema (entrou/saiu) e mensagens normais
-@bot.event
-async def on_message(message):
-    if message.guild and message.guild.id == MINHA_GUILD_ID:
-        # Canal do iTinder (setup) e canal específico onde aparecem as mensagens de entrada
-        canais_para_apagar = [setup_channel_id, 1436733269818343541]
-        
-        if message.channel.id in canais_para_apagar:
-            # Apaga mensagens de sistema (new_member) E mensagens normais de usuários
-            if (message.type == discord.MessageType.new_member or 
-                (message.author != bot.user and not message.author.guild_permissions.administrator)):
-                try:
-                    await message.delete()
-                except:
-                    pass
-    await bot.process_commands(message)
-
-@bot.event
-async def on_ready():
-    print(f"✅ iTinder online! Conectado como {bot.user.name}")
-    
-    guild = discord.Object(id=MINHA_GUILD_ID)
-    try:
-        bot.tree.copy_global_to(guild=guild)
-        await bot.tree.sync(guild=guild)
-        print("✅ Comandos sincronizados na guild!")
-    except Exception as e:
-        print(f"⚠️ Erro ao sincronizar comandos: {e}")
 
 if __name__ == "__main__":
     token = os.getenv("TOKEN")
