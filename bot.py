@@ -50,11 +50,13 @@ def can_pair(u1_id, u2_id):
     ts = PAIR_COOLDOWNS.get(key)
     if not ts:
         return True
-    return time.time() >= ts
+    current_time = time.time()
+    return current_time >= ts
 
 def set_pair_cooldown(u1_id, u2_id):
     key = pair_key(u1_id, u2_id)
     PAIR_COOLDOWNS[key] = time.time() + PAIR_COOLDOWN_SECONDS
+    print(f"⏰ Cooldown setado para {u1_id} e {u2_id} por 1 hora")
 
 def gerar_nome_canal(guild, user1_id, user2_id):
     """Gera nome do canal com os nomes dos usuários"""
@@ -161,9 +163,15 @@ async def tentar_formar_dupla(guild):
                 if not user_queues.get(u1_id, False) or not user_queues.get(u2_id, False):
                     continue
                 
+                # Verifica se já existe um canal ativo entre esses dois usuários
                 if any(channel_data.get("u1") == u1_id and channel_data.get("u2") == u2_id or 
                        channel_data.get("u1") == u2_id and channel_data.get("u2") == u1_id 
                        for channel_data in active_channels.values()):
+                    continue
+                
+                # Verifica cooldown ANTES de verificar compatibilidade
+                if not can_pair(u1_id, u2_id):
+                    print(f"⏰ Cooldown ativo entre {u1_id} e {u2_id} - pulando par")
                     continue
                 
                 pref1 = entry1["preference"]
@@ -177,9 +185,6 @@ async def tentar_formar_dupla(guild):
                         compatible = True
                 
                 if not compatible:
-                    continue
-                    
-                if not can_pair(u1_id, u2_id):
                     continue
 
                 u1 = guild.get_member(u1_id)
@@ -258,7 +263,7 @@ async def tentar_formar_dupla(guild):
                     "📝 **Lembrete:**\n"
                     "• ⏰ 10 minutos de conversa\n"
                     "• 🎧 Call secreta disponível\n"
-                    "• ❌ Recusar = 1 hora de espera pra encontrar a mesma pessoa\n"
+                    "• ❌ Recusar = 1 hora de espera\n"
                     f"• ⏳ **Aceite em {ACCEPT_TIMEOUT} segundos ou o chat será fechado**\n"
                     "• 💬 Chat anônimo e seguro\n\n"
                     "🔍 **Você continua na fila procurando mais pessoas!**"
@@ -288,6 +293,7 @@ async def _accept_timeout_handler(canal, timeout=ACCEPT_TIMEOUT):
             u2 = data.get("u2")
             if u1 and u2:
                 set_pair_cooldown(u1, u2)
+                print(f"⏰ Cooldown setado por timeout: {u1} e {u2}")
             
             try:
                 msg = await canal.fetch_message(data["message_id"])
@@ -337,6 +343,12 @@ async def _auto_close_channel_after(canal, segundos=CHANNEL_DURATION):
     try:
         data = active_channels.get(canal.id)
         if data:
+            u1 = data.get("u1")
+            u2 = data.get("u2")
+            if u1 and u2:
+                set_pair_cooldown(u1, u2)
+                print(f"⏰ Cooldown setado por fim de conversa: {u1} e {u2}")
+            
             try:
                 msg = await canal.fetch_message(data["message_id"])
                 embed = discord.Embed(
@@ -479,7 +491,7 @@ class IndividualView(discord.ui.View):
                     "• 🔍 **Procura contínua** - Encontre múltiplas pessoas\n"
                     "• ⏰ **10 minutos** de conversa por par\n"
                     "• 🎧 **Call secreta** durante o chat\n"
-                    "• ❌ Recusar alguém = **1 hora** de espera pra encontrar a mesma pessoa\n"
+                    "• ❌ Recusar alguém = **1 hora** de espera\n"
                     "• 💬 Chat 100% anônimo\n\n"
                     "⚙️ **Volte ao canal principal e clique em `Configurar Perfil`!**"
                 ),
@@ -553,7 +565,7 @@ class IndividualView(discord.ui.View):
                 "• 💬 **Chats simultâneos** com múltiplas pessoas\n"
                 "• ⏰ Cada chat dura **10 minutos**\n"
                 "• 🎧 **Call secreta** disponível\n"
-                "• ❌ Recusar = 1 hora de espera pra encontrar a mesma pessoa\n\n"
+                "• ❌ Recusar = 1 hora de espera\n\n"
                 "💡 **Você receberá novos chats automaticamente!**"
             ),
             color=0x66FF99
@@ -566,8 +578,8 @@ class IndividualView(discord.ui.View):
             message = await interaction.response.send_message(embed=embed, view=LeaveQueueView(user.id), ephemeral=True)
             if hasattr(message, 'message'):
                 user_messages[user.id] = message.message
-            else:
-                user_messages[user.id] = await interaction.original_response()
+                else:
+                    user_messages[user.id] = await interaction.original_response()
 
 class TicketView(discord.ui.View):
     def __init__(self):
@@ -612,7 +624,7 @@ class TicketView(discord.ui.View):
                     "• 🔍 **Procura contínua** - Encontre múltiplas pessoas\n"
                     "• ⏰ **10 minutos** de conversa por par\n"
                     "• 🎧 **Call secreta** durante o chat\n"
-                    "• ❌ Recusar alguém = **1 hora** de espera pra encontrar a mesma pessoa\n"
+                    "• ❌ Recusar alguém = **1 hora** de espera\n"
                     "• 💬 Chat 100% anônimo\n\n"
                     "⚙️ **Clique em `Configurar Perfil` no canal principal!**"
                 ),
@@ -729,6 +741,7 @@ class ConversationView(discord.ui.View):
             return
 
         set_pair_cooldown(self.u1.id, self.u2.id)
+        print(f"⏰ Cooldown setado por recusa: {self.u1.id} e {self.u2.id}")
         
         try:
             msg = await self.canal.fetch_message(self.message_id)
@@ -796,6 +809,14 @@ class EncerrarView(discord.ui.View):
             return
 
         data = active_channels.get(self.canal.id, {})
+        u1_id = data.get("u1") if data else None
+        u2_id = data.get("u2") if data else None
+        
+        # Aplica cooldown quando o usuário encerra manualmente
+        if u1_id and u2_id:
+            set_pair_cooldown(u1_id, u2_id)
+            print(f"⏰ Cooldown setado por encerramento manual: {u1_id} e {u2_id}")
+        
         try:
             msg = None
             if data and data.get("message_id"):
