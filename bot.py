@@ -20,9 +20,8 @@ active_users = set()
 active_channels = {}
 user_genders = {}
 user_preferences = {}
-PAIR_COOLDOWNS = {}
-PAIR_COOLDOWN_SECONDS = 3600  # 1 hora de cooldown
-ACCEPT_TIMEOUT = 300  # 5 minutos para aceitar/recusar (alterado de 100 segundos)
+PERMANENT_BLOCKS = {}  # Agora é um bloqueio permanente
+ACCEPT_TIMEOUT = 300  # 5 minutos para aceitar/recusar
 CHANNEL_DURATION = 10 * 60  # 10 minutos de conversa
 
 setup_channel_id = None
@@ -45,18 +44,16 @@ def get_preference_display(pref):
 def pair_key(u1_id, u2_id):
     return frozenset({u1_id, u2_id})
 
-def can_pair(u1_id, u2_id):
+def is_permanently_blocked(u1_id, u2_id):
+    """Verifica se existe bloqueio permanente entre dois usuários"""
     key = pair_key(u1_id, u2_id)
-    ts = PAIR_COOLDOWNS.get(key)
-    if not ts:
-        return True
-    current_time = time.time()
-    return current_time >= ts
+    return key in PERMANENT_BLOCKS
 
-def set_pair_cooldown(u1_id, u2_id):
+def set_permanent_block(u1_id, u2_id):
+    """Define bloqueio permanente entre dois usuários"""
     key = pair_key(u1_id, u2_id)
-    PAIR_COOLDOWNS[key] = time.time() + PAIR_COOLDOWN_SECONDS
-    print(f"🔒 Cooldown setado para {u1_id} e {u2_id} até {PAIR_COOLDOWNS[key]}")
+    PERMANENT_BLOCKS[key] = True
+    print(f"🔒 BLOQUEIO PERMANENTE definido entre {u1_id} e {u2_id}")
 
 def gerar_nome_canal(guild, user1_id, user2_id):
     """Gera nome do canal com os nomes dos usuários"""
@@ -152,12 +149,6 @@ async def tentar_formar_dupla(guild):
         if len(usuarios_na_fila) < 2:
             continue
 
-        # Limpar cooldowns expirados
-        current_time = time.time()
-        expired_keys = [key for key, expiry in PAIR_COOLDOWNS.items() if current_time >= expiry]
-        for key in expired_keys:
-            del PAIR_COOLDOWNS[key]
-
         for i in range(len(usuarios_na_fila)):
             for j in range(i + 1, len(usuarios_na_fila)):
                 entry1 = usuarios_na_fila[i]
@@ -167,6 +158,11 @@ async def tentar_formar_dupla(guild):
                 u2_id = entry2["user_id"]
                 
                 if not user_queues.get(u1_id, False) or not user_queues.get(u2_id, False):
+                    continue
+                
+                # VERIFICAR BLOQUEIO PERMANENTE - AGORA É PARA SEMPRE
+                if is_permanently_blocked(u1_id, u2_id):
+                    print(f"🚫 BLOQUEIO PERMANENTE: {u1_id} e {u2_id} não podem se conectar nunca mais")
                     continue
                 
                 # Verificar se já estão em um canal ativo juntos
@@ -187,11 +183,6 @@ async def tentar_formar_dupla(guild):
                         compatible = True
                 
                 if not compatible:
-                    continue
-                    
-                # VERIFICAR COOLDOWN - AGORA FUNCIONANDO CORRETAMENTE
-                if not can_pair(u1_id, u2_id):
-                    print(f"⏳ Cooldown ativo para {u1_id} e {u2_id}")
                     continue
 
                 u1 = guild.get_member(u1_id)
@@ -253,7 +244,7 @@ async def tentar_formar_dupla(guild):
                         "• Ambos precisam aceitar para começar a conversar\n"
                         "• ⏰ **10 minutos** de conversa após aceitar\n"
                         "• 🎧 **Call secreta** disponível durante o chat\n"
-                        "• ❌ Se recusar: **1 hora** de espera para encontrar a mesma pessoa\n"
+                        "• ❌ **SE RECUSAR: NUNCA MAIS** encontrará esta pessoa\n"
                         f"• ⏳ **Chat será fechado em {ACCEPT_TIMEOUT//60} minutos se ninguém aceitar**\n"
                         "• 🔒 Chat totalmente anônimo e privado\n\n"
                         "💡 **Dica:** Sejam respeitosos e aproveitem a conversa!"
@@ -275,7 +266,7 @@ async def tentar_formar_dupla(guild):
                     "📝 **Lembrete:**\n"
                     "• ⏰ 10 minutos de conversa\n"
                     "• 🎧 Call secreta disponível\n"
-                    "• ❌ Recusar = 1 hora de espera\n"
+                    "• ❌ **RECUSAR = NUNCA MAIS ENCONTRARÁ ESTA PESSOA**\n"
                     f"• ⏳ **Aceite em {ACCEPT_TIMEOUT//60} minutos ou o chat será fechado**\n"
                     "• 💬 Chat anônimo e seguro\n\n"
                     "🔍 **Você continua na fila procurando mais pessoas!**"
@@ -301,12 +292,6 @@ async def _accept_timeout_handler(canal, timeout=ACCEPT_TIMEOUT):
     if not data.get("started", False):
         accepted = data.get("accepted", set())
         if len(accepted) < 2:
-            u1 = data.get("u1")
-            u2 = data.get("u2")
-            if u1 and u2:
-                set_pair_cooldown(u1, u2)
-                print(f"⏰ Timeout: Cooldown setado para {u1} e {u2}")
-            
             try:
                 msg = await canal.fetch_message(data["message_id"])
                 embed = discord.Embed(
@@ -395,12 +380,6 @@ async def _auto_close_channel_after(canal, segundos=CHANNEL_DURATION):
     try:
         data = active_channels.get(canal.id)
         if data:
-            u1 = data.get("u1")
-            u2 = data.get("u2")
-            if u1 and u2:
-                set_pair_cooldown(u1, u2)
-                print(f"⏰ Chat finalizado: Cooldown setado para {u1} e {u2}")
-            
             try:
                 msg = await canal.fetch_message(data["message_id"])
                 embed = discord.Embed(
@@ -477,11 +456,6 @@ class ExtensionView(discord.ui.View):
                 color=0xFF9999
             )
             await interaction.response.send_message(embed=embed)
-            
-            u1 = data.get("u1")
-            u2 = data.get("u2")
-            if u1 and u2:
-                set_pair_cooldown(u1, u2)
             
             await asyncio.sleep(2)
             await encerrar_canal_e_cleanup(self.canal)
@@ -611,7 +585,7 @@ class IndividualView(discord.ui.View):
                     "• 🔍 **Procura contínua** - Encontre múltiplas pessoas\n"
                     "• ⏰ **10 minutos** de conversa por par\n"
                     "• 🎧 **Call secreta** durante o chat\n"
-                    "• ❌ Recusar alguém = **1 hora** de espera\n"
+                    "• ❌ **RECUSAR = NUNCA MAIS** encontrará a mesma pessoa\n"
                     "• 💬 Chat 100% anônimo\n\n"
                     "⚙️ **Volte ao canal principal e clique em `Configurar Perfil`!**"
                 ),
@@ -643,6 +617,7 @@ class IndividualView(discord.ui.View):
                     "💡 **Você pode:**\n"
                     "• Conversar com múltiplas pessoas ao mesmo tempo\n"
                     "• Cada chat dura 10 minutos\n"
+                    "• ❌ **Recusar alguém = Nunca mais encontrará essa pessoa**\n"
                     "• Clique em **Sair da Fila** para parar de procurar"
                 ),
                 color=0x66FF99
@@ -685,7 +660,7 @@ class IndividualView(discord.ui.View):
                 "• 💬 **Chats simultâneos** com múltiplas pessoas\n"
                 "• ⏰ Cada chat dura **10 minutos**\n"
                 "• 🎧 **Call secreta** disponível\n"
-                "• ❌ Recusar = 1 hora de espera\n\n"
+                "• ❌ **RECUSAR = NUNCA MAIS** encontrará essa pessoa\n\n"
                 "💡 **Você receberá novos chats automaticamente!**"
             ),
             color=0x66FF99
@@ -744,7 +719,7 @@ class TicketView(discord.ui.View):
                     "• 🔍 **Procura contínua** - Encontre múltiplas pessoas\n"
                     "• ⏰ **10 minutos** de conversa por par\n"
                     "• 🎧 **Call secreta** durante o chat\n"
-                    "• ❌ Recusar alguém = **1 hora** de espera\n"
+                    "• ❌ **RECUSAR = NUNCA MAIS** encontrará a mesma pessoa\n"
                     "• 💬 Chat 100% anônimo\n\n"
                     "⚙️ **Clique em `Configurar Perfil` no canal principal!**"
                 ),
@@ -768,6 +743,9 @@ class TicketView(discord.ui.View):
                 f"**Seu perfil:** {gender_display}\n"
                 f"**Procurando:** {preference_display}\n\n"
                 "🎯 **Modo de Procura Contínua**\n\n"
+                "⚠️ **ATENÇÃO IMPORTANTE:**\n"
+                "• ❌ **Se você recusar alguém, NUNCA MAIS encontrará essa pessoa**\n"
+                "• 💡 Pense bem antes de recusar uma conversa!\n\n"
                 "💡 Clique em **Entrar na Fila** para começar a procurar múltiplas pessoas!"
             ),
             color=0x66FF99
@@ -812,7 +790,8 @@ class ConversationView(discord.ui.View):
                     f"{self.u2.display_name} {'✅' if self.u2.id in accepted else '⏳'}\n\n"
                     f"⏰ **Aguardando ambos aceitarem...**\n"
                     f"⏳ **Chat será fechado em {ACCEPT_TIMEOUT//60} minutos se ninguém aceitar**\n"
-                    "💡 **Lembrete:** 10 minutos de conversa após aceitar"
+                    "💡 **Lembrete:** 10 minutos de conversa após aceitar\n"
+                    "⚠️ **ATENÇÃO:** Recusar = Nunca mais encontrará esta pessoa"
                 ),
                 color=0xFF6B9E
             )
@@ -852,7 +831,7 @@ class ConversationView(discord.ui.View):
         
         await interaction.response.send_message("✅ Sua resposta foi registrada.", ephemeral=True)
 
-    @discord.ui.button(label="❌ Recusar", style=discord.ButtonStyle.danger, custom_id="conv_recusar")
+    @discord.ui.button(label="❌ Recusar (NUNCA MAIS)", style=discord.ButtonStyle.danger, custom_id="conv_recusar")
     async def recusar(self, interaction: discord.Interaction, button: discord.ui.Button):
         uid = interaction.user.id
         cid = self.canal.id
@@ -860,27 +839,32 @@ class ConversationView(discord.ui.View):
             await interaction.response.send_message("❌ Você não pode interagir aqui.", ephemeral=True)
             return
 
-        set_pair_cooldown(self.u1.id, self.u2.id)
-        print(f"❌ Recusa: Cooldown setado para {self.u1.id} e {self.u2.id}")
+        # BLOQUEIO PERMANENTE - NUNCA MAIS
+        set_permanent_block(self.u1.id, self.u2.id)
+        print(f"🚫 BLOQUEIO PERMANENTE definido entre {self.u1.id} e {self.u2.id}")
         
         try:
             msg = await self.canal.fetch_message(self.message_id)
             embed = discord.Embed(
-                title="💔 Conversa Recusada",
+                title="💔 Conversa Recusada - BLOQUEIO PERMANENTE",
                 description=(
-                    f"{interaction.user.display_name} recusou a conversa.\n\n"
-                    "⚠️ **Atenção:** Se você recusar alguém, só poderá encontrar a mesma pessoa novamente após **1 hora**.\n\n"
-                    "💫 Não desanime! Tente novamente com outra pessoa."
+                    f"**{interaction.user.display_name} recusou a conversa.**\n\n"
+                    "🚫 **BLOQUEIO PERMANENTE ATIVADO**\n"
+                    "⚠️ **Vocês NUNCA MAIS se encontrarão no iTinder!**\n\n"
+                    "💫 Não desanime! Ainda há muitas outras pessoas para conhecer."
                 ),
-                color=0xFF9999
+                color=0xFF3333
             )
             await msg.edit(embed=embed, view=None)
         except Exception:
             pass
         
-        await asyncio.sleep(2)
+        await asyncio.sleep(3)
         await encerrar_canal_e_cleanup(self.canal)
-        await interaction.response.send_message("❌ Você recusou a conversa.", ephemeral=True)
+        await interaction.response.send_message(
+            "🚫 Você recusou a conversa. **NUNCA MAIS** encontrará esta pessoa no iTinder!", 
+            ephemeral=True
+        )
 
 class EncerrarView(discord.ui.View):
     def __init__(self, canal, u1, u2):
@@ -928,17 +912,9 @@ class EncerrarView(discord.ui.View):
             await interaction.response.send_message("❌ Você não pode encerrar.", ephemeral=True)
             return
 
-        data = active_channels.get(self.canal.id, {})
-        u1_id = data.get("u1") if data else None
-        u2_id = data.get("u2") if data else None
-        
-        # SETAR COOLDOWN AO ENCERRAR MANUALMENTE
-        if u1_id and u2_id:
-            set_pair_cooldown(u1_id, u2_id)
-            print(f"🔒 Encerramento manual: Cooldown setado para {u1_id} e {u2_id}")
-        
         try:
             msg = None
+            data = active_channels.get(self.canal.id, {})
             if data and data.get("message_id"):
                 try:
                     msg = await self.canal.fetch_message(data["message_id"])
@@ -999,13 +975,16 @@ async def setupcarente(interaction: discord.Interaction):
             "• 💬 **Vários chats ao mesmo tempo**\n"
             "• ⏰ **10 minutos** por conversa\n"
             "• 🎧 **Call secreta** durante o chat\n"
-            "• ❌ Recusar = **1 hora** de espera\n\n"
+            "• ❌ **RECUSAR = NUNCA MAIS** encontrará a pessoa\n\n"
             "⚙️ **PASSO A PASSO:**\n"
             "1. Clique em `⚙️ Configurar Perfil`\n"
             "2. Escolha sua identidade e preferência\n"
             "3. Clique em `💌 Entrar na Fila`\n"
             "4. **Converse com várias pessoas!**\n"
             "5. Clique em `Sair da Fila` quando quiser parar\n\n"
+            "⚠️ **ATENÇÃO IMPORTANTE:**\n"
+            "• **Se recusar alguém, NUNCA MAIS encontrará essa pessoa**\n"
+            "• Pense bem antes de recusar uma conversa!\n\n"
             "⚠️ **ESTE CANAL FOI BLOQUEADO**\n"
             "Apenas os botões abaixo funcionam aqui."
         ),
