@@ -21,7 +21,7 @@ active_channels = {}
 user_genders = {}
 user_preferences = {}
 PAIR_COOLDOWNS = {}
-PAIR_COOLDOWN_SECONDS = 5 * 60
+PAIR_COOLDOWN_SECONDS = 3600  # 1 hora de cooldown
 ACCEPT_TIMEOUT = 100  # 100 segundos para aceitar/recusar
 CHANNEL_DURATION = 10 * 60  # 10 minutos de conversa
 
@@ -57,7 +57,17 @@ def set_pair_cooldown(u1_id, u2_id):
     PAIR_COOLDOWNS[key] = time.time() + PAIR_COOLDOWN_SECONDS
 
 def gerar_nome_canal(guild, user1_id, user2_id):
-    base = f"chat-{user1_id}-{user2_id}"[-20:]
+    """Gera nome do canal com os nomes dos usuários"""
+    user1 = guild.get_member(user1_id)
+    user2 = guild.get_member(user2_id)
+    
+    if user1 and user2:
+        nome_u1 = user1.display_name[:10]
+        nome_u2 = user2.display_name[:10]
+        base = f"💕-{nome_u1}-{nome_u2}"[:20]
+    else:
+        base = f"chat-{user1_id}-{user2_id}"[-20:]
+    
     existing = {c.name for c in guild.text_channels}
     if base not in existing:
         return base
@@ -221,12 +231,12 @@ async def tentar_formar_dupla(guild):
                 embed = discord.Embed(
                     title="💌 iTinder - Par Encontrado!",
                     description=(
-                        f"**{u1.mention}** ({gender1_display}) & **{u2.mention}** ({gender2_display})\n\n"
+                        f"**{u1.display_name}** ({gender1_display}) & **{u2.display_name}** ({gender2_display})\n\n"
                         "📋 **Como funciona:**\n"
                         "• Ambos precisam aceitar para começar a conversar\n"
                         "• ⏰ **10 minutos** de conversa após aceitar\n"
                         "• 🎧 **Call secreta** disponível durante o chat\n"
-                        "• ❌ Se recusar: **5 minutos** de espera para encontrar a mesma pessoa\n"
+                        "• ❌ Se recusar: **1 hora** de espera para encontrar a mesma pessoa\n"
                         f"• ⏳ **Chat será fechado em {ACCEPT_TIMEOUT} segundos se ninguém aceitar**\n"
                         "• 🔒 Chat totalmente anônimo e privado\n\n"
                         "💡 **Dica:** Sejam respeitosos e aproveitem a conversa!"
@@ -248,7 +258,7 @@ async def tentar_formar_dupla(guild):
                     "📝 **Lembrete:**\n"
                     "• ⏰ 10 minutos de conversa\n"
                     "• 🎧 Call secreta disponível\n"
-                    "• ❌ Recusar = 5 minutos de espera\n"
+                    "• ❌ Recusar = 1 hora de espera\n"
                     f"• ⏳ **Aceite em {ACCEPT_TIMEOUT} segundos ou o chat será fechado**\n"
                     "• 💬 Chat anônimo e seguro\n\n"
                     "🔍 **Você continua na fila procurando mais pessoas!**"
@@ -469,7 +479,7 @@ class IndividualView(discord.ui.View):
                     "• 🔍 **Procura contínua** - Encontre múltiplas pessoas\n"
                     "• ⏰ **10 minutos** de conversa por par\n"
                     "• 🎧 **Call secreta** durante o chat\n"
-                    "• ❌ Recusar alguém = **5 minutos** de espera\n"
+                    "• ❌ Recusar alguém = **1 hora** de espera\n"
                     "• 💬 Chat 100% anônimo\n\n"
                     "⚙️ **Volte ao canal principal e clique em `Configurar Perfil`!**"
                 ),
@@ -543,7 +553,7 @@ class IndividualView(discord.ui.View):
                 "• 💬 **Chats simultâneos** com múltiplas pessoas\n"
                 "• ⏰ Cada chat dura **10 minutos**\n"
                 "• 🎧 **Call secreta** disponível\n"
-                "• ❌ Recusar = 5 minutos de espera\n\n"
+                "• ❌ Recusar = 1 hora de espera\n\n"
                 "💡 **Você receberá novos chats automaticamente!**"
             ),
             color=0x66FF99
@@ -602,7 +612,7 @@ class TicketView(discord.ui.View):
                     "• 🔍 **Procura contínua** - Encontre múltiplas pessoas\n"
                     "• ⏰ **10 minutos** de conversa por par\n"
                     "• 🎧 **Call secreta** durante o chat\n"
-                    "• ❌ Recusar alguém = **5 minutos** de espera\n"
+                    "• ❌ Recusar alguém = **1 hora** de espera\n"
                     "• 💬 Chat 100% anônimo\n\n"
                     "⚙️ **Clique em `Configurar Perfil` no canal principal!**"
                 ),
@@ -666,8 +676,8 @@ class ConversationView(discord.ui.View):
             embed = discord.Embed(
                 title="💌 iTinder - Confirmação",
                 description=(
-                    f"{self.u1.mention} {'✅' if self.u1.id in accepted else '⏳'}\n"
-                    f"{self.u2.mention} {'✅' if self.u2.id in accepted else '⏳'}\n\n"
+                    f"{self.u1.display_name} {'✅' if self.u1.id in accepted else '⏳'}\n"
+                    f"{self.u2.display_name} {'✅' if self.u2.id in accepted else '⏳'}\n\n"
                     f"⏰ **Aguardando ambos aceitarem...**\n"
                     f"⏳ **Chat será fechado em {ACCEPT_TIMEOUT} segundos se ninguém aceitar**\n"
                     "💡 **Lembrete:** 10 minutos de conversa após aceitar"
@@ -691,7 +701,7 @@ class ConversationView(discord.ui.View):
                 embed = discord.Embed(
                     title="💫 Conversa Iniciada!",
                     description=(
-                        f"{self.u1.mention} e {self.u2.mention}\n\n"
+                        f"{self.u1.display_name} e {self.u2.display_name}\n\n"
                         "🎉 **A conversa foi liberada!**\n"
                         "⏰ **Tempo:** 10 minutos\n"
                         "🎧 **Call secreta:** Disponível durante o chat\n"
@@ -725,8 +735,8 @@ class ConversationView(discord.ui.View):
             embed = discord.Embed(
                 title="💔 Conversa Recusada",
                 description=(
-                    f"{interaction.user.mention} recusou a conversa.\n\n"
-                    "⚠️ **Atenção:** Se você recusar alguém, só poderá encontrar a mesma pessoa novamente após **5 minutos**.\n\n"
+                    f"{interaction.user.display_name} recusou a conversa.\n\n"
+                    "⚠️ **Atenção:** Se você recusar alguém, só poderá encontrar a mesma pessoa novamente após **1 hora**.\n\n"
                     "💫 Não desanime! Tente novamente com outra pessoa."
                 ),
                 color=0xFF9999
@@ -769,7 +779,7 @@ class EncerrarView(discord.ui.View):
                 description=(
                     f"**Call criada com sucesso!**\n\n"
                     f"📞 **Canal:** {call_channel.mention}\n"
-                    f"👥 **Participantes:** {self.u1.mention} e {self.u2.mention}\n\n"
+                    f"👥 **Participantes:** {self.u1.display_name} e {self.u2.display_name}\n\n"
                     "💡 **A call será automaticamente encerrada quando o chat terminar.**\n"
                     "⚠️ **Lembrete:** A call é totalmente anônima e segura."
                 ),
@@ -848,7 +858,7 @@ async def setupcarente(interaction: discord.Interaction):
             "• 💬 **Vários chats ao mesmo tempo**\n"
             "• ⏰ **10 minutos** por conversa\n"
             "• 🎧 **Call secreta** durante o chat\n"
-            "• ❌ Recusar = **5 minutos** de espera\n\n"
+            "• ❌ Recusar = **1 hora** de espera\n\n"
             "⚙️ **PASSO A PASSO:**\n"
             "1. Clique em `⚙️ Configurar Perfil`\n"
             "2. Escolha sua identidade e preferência\n"
