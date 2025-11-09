@@ -22,7 +22,7 @@ user_genders = {}
 user_preferences = {}
 PAIR_COOLDOWNS = {}
 PAIR_COOLDOWN_SECONDS = 3600  # 1 hora de cooldown
-ACCEPT_TIMEOUT = 100  # 100 segundos para aceitar/recusar
+ACCEPT_TIMEOUT = 300  # 5 minutos para aceitar/recusar (alterado de 100 segundos)
 CHANNEL_DURATION = 10 * 60  # 10 minutos de conversa
 
 setup_channel_id = None
@@ -251,7 +251,7 @@ async def tentar_formar_dupla(guild):
                         "• ⏰ **10 minutos** de conversa após aceitar\n"
                         "• 🎧 **Call secreta** disponível durante o chat\n"
                         "• ❌ Se recusar: **1 hora** de espera para encontrar a mesma pessoa\n"
-                        f"• ⏳ **Chat será fechado em {ACCEPT_TIMEOUT} segundos se ninguém aceitar**\n"
+                        f"• ⏳ **Chat será fechado em 5 minutos se ninguém aceitar**\n"
                         "• 🔒 Chat totalmente anônimo e privado\n\n"
                         "💡 **Dica:** Sejam respeitosos e aproveitem a conversa!"
                     ),
@@ -273,7 +273,7 @@ async def tentar_formar_dupla(guild):
                     "• ⏰ 10 minutos de conversa\n"
                     "• 🎧 Call secreta disponível\n"
                     "• ❌ Recusar = 1 hora de espera\n"
-                    f"• ⏳ **Aceite em {ACCEPT_TIMEOUT} segundos ou o chat será fechado**\n"
+                    f"• ⏳ **Aceite em 5 minutos ou o chat será fechado**\n"
                     "• 💬 Chat anônimo e seguro\n\n"
                     "🔍 **Você continua na fila procurando mais pessoas!**"
                 )
@@ -309,7 +309,7 @@ async def _accept_timeout_handler(canal, timeout=ACCEPT_TIMEOUT):
                 embed = discord.Embed(
                     title="⏰ Tempo Esgotado",
                     description=(
-                        f"O tempo para aceitar expirou ({ACCEPT_TIMEOUT} segundos).\n\n"
+                        f"O tempo para aceitar expirou (5 minutos).\n\n"
                         "⚠️ **Nenhum dos dois aceitou a conversa a tempo.**\n"
                         "💫 Volte ao canal principal para tentar novamente!"
                     ),
@@ -321,6 +321,25 @@ async def _accept_timeout_handler(canal, timeout=ACCEPT_TIMEOUT):
             await asyncio.sleep(2)
             await encerrar_canal_e_cleanup(canal)
 
+async def _send_pv_reminder(user, partner_name, canal):
+    """Envia lembrete no PV quando faltar 1 minuto"""
+    try:
+        embed = discord.Embed(
+            title="⏰ iTinder - Par Encontrado!",
+            description=(
+                f"**💌 Você encontrou um par!**\n\n"
+                f"👤 **Par encontrado:** {partner_name}\n"
+                f"📁 **Canal do chat:** {canal.mention}\n\n"
+                "⏳ **Falta apenas 1 minuto para o chat fechar!**\n"
+                "⚠️ **Aceite rapidamente para não perder a conversa!**\n\n"
+                "💡 **Corra para o canal e clique em '✅ Aceitar Chat'!**"
+            ),
+            color=0xFF6B9E
+        )
+        await user.send(embed=embed)
+    except Exception:
+        pass
+
 async def _auto_close_channel_after(canal, segundos=CHANNEL_DURATION):
     await asyncio.sleep(segundos - 60)
     
@@ -329,6 +348,19 @@ async def _auto_close_channel_after(canal, segundos=CHANNEL_DURATION):
     
     data = active_channels.get(canal.id)
     if data and not data.get("warning_sent", False):
+        # Enviar lembretes no PV para ambos os usuários
+        u1_id = data.get("u1")
+        u2_id = data.get("u2")
+        
+        if u1_id and u2_id:
+            guild = canal.guild
+            u1 = guild.get_member(u1_id)
+            u2 = guild.get_member(u2_id)
+            
+            if u1 and u2:
+                await _send_pv_reminder(u1, u2.display_name, canal)
+                await _send_pv_reminder(u2, u1.display_name, canal)
+        
         try:
             embed = discord.Embed(
                 title="⏰ Aviso: Chat Terminando",
@@ -587,8 +619,8 @@ class IndividualView(discord.ui.View):
             message = await interaction.response.send_message(embed=embed, view=LeaveQueueView(user.id), ephemeral=True)
             if hasattr(message, 'message'):
                 user_messages[user.id] = message.message
-            else:
-                user_messages[user.id] = await interaction.original_response()
+                else:
+                    user_messages[user.id] = await interaction.original_response()
 
 class TicketView(discord.ui.View):
     def __init__(self):
@@ -700,7 +732,7 @@ class ConversationView(discord.ui.View):
                     f"{self.u1.display_name} {'✅' if self.u1.id in accepted else '⏳'}\n"
                     f"{self.u2.display_name} {'✅' if self.u2.id in accepted else '⏳'}\n\n"
                     f"⏰ **Aguardando ambos aceitarem...**\n"
-                    f"⏳ **Chat será fechado em {ACCEPT_TIMEOUT} segundos se ninguém aceitar**\n"
+                    f"⏳ **Chat será fechado em 5 minutos se ninguém aceitar**\n"
                     "💡 **Lembrete:** 10 minutos de conversa após aceitar"
                 ),
                 color=0xFF6B9E
