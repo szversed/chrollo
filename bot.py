@@ -20,9 +20,12 @@ active_users = set()
 active_channels = {}
 user_genders = {}
 user_preferences = {}
-PERMANENT_BLOCKS = {}  # Agora é um bloqueio permanente
+PERMANENT_BLOCKS = {}  # Bloqueio permanente
 ACCEPT_TIMEOUT = 300  # 5 minutos para aceitar/recusar
 CHANNEL_DURATION = 10 * 60  # 10 minutos de conversa
+
+# Histórico de pares que já se encontraram (BLOQUEIO PERMANENTE)
+ENCOUNTER_HISTORY = {}
 
 setup_channel_id = None
 canal_bloqueado = False
@@ -54,6 +57,17 @@ def set_permanent_block(u1_id, u2_id):
     key = pair_key(u1_id, u2_id)
     PERMANENT_BLOCKS[key] = True
     print(f"🔒 BLOQUEIO PERMANENTE definido entre {u1_id} e {u2_id}")
+
+def have_encountered(u1_id, u2_id):
+    """Verifica se dois usuários já se encontraram anteriormente - BLOQUEIO PERMANENTE"""
+    key = pair_key(u1_id, u2_id)
+    return key in ENCOUNTER_HISTORY
+
+def mark_encounter(u1_id, u2_id):
+    """Marca que dois usuários se encontraram - BLOQUEIO PERMANENTE ATIVADO"""
+    key = pair_key(u1_id, u2_id)
+    ENCOUNTER_HISTORY[key] = True
+    print(f"🚫 BLOQUEIO PERMANENTE: {u1_id} e {u2_id} NUNCA MAIS se encontrarão")
 
 def gerar_nome_canal(guild, user1_id, user2_id):
     """Gera nome do canal com os nomes dos usuários"""
@@ -117,21 +131,28 @@ async def encerrar_canal_e_cleanup(canal):
     try:
         cid = canal.id
         data = active_channels.get(cid)
-        if data:
-            u1 = data.get("u1")
-            u2 = data.get("u2")
+        if not data:
+            return
             
-            call_channel = data.get("call_channel")
-            if call_channel:
-                try:
-                    await call_channel.delete()
-                except:
-                    pass
-            
+        u1_id = data.get("u1")
+        u2_id = data.get("u2")
+        
+        # MARCA ENCONTRO - SEMPRE QUE UM CANAL É CRIADO, MESMO QUE NÃO ACEITEM
+        if u1_id and u2_id:
+            mark_encounter(u1_id, u2_id)
+            print(f"🚫 CANAL ENCERRADO: {u1_id} e {u2_id} NUNCA MAIS se encontrarão")
+        
+        call_channel = data.get("call_channel")
+        if call_channel:
             try:
-                del active_channels[cid]
-            except Exception:
+                await call_channel.delete()
+            except:
                 pass
+        
+        try:
+            del active_channels[cid]
+        except Exception:
+            pass
     except Exception:
         pass
     try:
@@ -163,6 +184,11 @@ async def tentar_formar_dupla(guild):
                 # VERIFICAR BLOQUEIO PERMANENTE - AGORA É PARA SEMPRE
                 if is_permanently_blocked(u1_id, u2_id):
                     print(f"🚫 BLOQUEIO PERMANENTE: {u1_id} e {u2_id} não podem se conectar nunca mais")
+                    continue
+                
+                # VERIFICAR SE JÁ SE ENCONTRARAM - BLOQUEIO PERMANENTE
+                if have_encountered(u1_id, u2_id):
+                    print(f"🚫 ENCONTRO ANTERIOR: {u1_id} e {u2_id} já se encontraram e NUNCA MAIS se encontrarão")
                     continue
                 
                 # Verificar se já estão em um canal ativo juntos
@@ -219,6 +245,10 @@ async def tentar_formar_dupla(guild):
                 except Exception:
                     continue
                 
+                # MARCA ENCONTRO IMEDIATAMENTE QUANDO O CANAL É CRIADO - BLOQUEIO PERMANENTE
+                mark_encounter(u1_id, u2_id)
+                print(f"🚫 NOVO PAR FORMADO: {u1_id} e {u2_id} - NUNCA MAIS se encontrarão")
+                
                 active_channels[canal.id] = {
                     "u1": u1_id,
                     "u2": u2_id,
@@ -240,14 +270,14 @@ async def tentar_formar_dupla(guild):
                     title="💌 iTinder - Par Encontrado!",
                     description=(
                         f"**{u1.display_name}** ({gender1_display}) & **{u2.display_name}** ({gender2_display})\n\n"
-                        "📋 **Como funciona:**\n"
-                        "• Ambos precisam aceitar para começar a conversar\n"
-                        "• ⏰ **10 minutos** de conversa após aceitar\n"
+                        "🚨 **ATENÇÃO - BLOQUEIO PERMANENTE ATIVADO:**\n"
+                        "• ❌ **DEPOIS DESTE ENCONTRO: NUNCA MAIS** se encontrarão\n"
+                        "• ⏰ **10 minutos** de conversa se ambos aceitarem\n"
                         "• 🎧 **Call secreta** disponível durante o chat\n"
-                        "• ❌ **SE RECUSAR: NUNCA MAIS** encontrará esta pessoa\n"
+                        "• 🔒 **BLOQUEIO PERMANENTE** após qualquer interação\n"
                         f"• ⏳ **Chat será fechado em {ACCEPT_TIMEOUT//60} minutos se ninguém aceitar**\n"
-                        "• 🔒 Chat totalmente anônimo e privado\n\n"
-                        "💡 **Dica:** Sejam respeitosos e aproveitem a conversa!"
+                        "• 💬 Chat totalmente anônimo e privado\n\n"
+                        "⚠️ **Esta é sua ÚNICA chance de conversar com esta pessoa!**"
                     ),
                     color=0xFF6B9E
                 )
@@ -261,14 +291,14 @@ async def tentar_formar_dupla(guild):
                     continue
                 
                 aviso_text = (
-                    "💌 **Novo par encontrado no iTinder!**\n\n"
+                    "💌 **NOVO PAR ENCONTRADO NO iTINDER!**\n\n"
                     f"Você foi levado para {canal.mention}\n"
-                    "📝 **Lembrete:**\n"
-                    "• ⏰ 10 minutos de conversa\n"
+                    "🚨 **BLOQUEIO PERMANENTE ATIVADO:**\n"
+                    "• ❌ **DEPOIS DESSE ENCONTRO: NUNCA MAIS** encontrará esta pessoa\n"
+                    "• ⏰ 10 minutos de conversa se aceitarem\n"
                     "• 🎧 Call secreta disponível\n"
-                    "• ❌ **RECUSAR = NUNCA MAIS ENCONTRARÁ ESTA PESSOA**\n"
                     f"• ⏳ **Aceite em {ACCEPT_TIMEOUT//60} minutos ou o chat será fechado**\n"
-                    "• 💬 Chat anônimo e seguro\n\n"
+                    "• 🔒 **BLOQUEIO PERMANENTE** após qualquer interação\n\n"
                     "🔍 **Você continua na fila procurando mais pessoas!**"
                 )
                 try:
@@ -295,11 +325,12 @@ async def _accept_timeout_handler(canal, timeout=ACCEPT_TIMEOUT):
             try:
                 msg = await canal.fetch_message(data["message_id"])
                 embed = discord.Embed(
-                    title="⏰ Tempo Esgotado",
+                    title="⏰ Tempo Esgotado - BLOQUEIO PERMANENTE",
                     description=(
                         f"O tempo para aceitar expirou ({ACCEPT_TIMEOUT//60} minutos).\n\n"
                         "⚠️ **Nenhum dos dois aceitou a conversa a tempo.**\n"
-                        "💫 Volte ao canal principal para tentar novamente!"
+                        "🚫 **BLOQUEIO PERMANENTE:** Vocês NUNCA MAIS se encontrarão!\n"
+                        "💫 Volte ao canal principal para tentar com outras pessoas!"
                     ),
                     color=0xFF9999
                 )
@@ -329,7 +360,8 @@ async def _auto_close_channel_after(canal, segundos=CHANNEL_DURATION):
                     "**⚠️ O chat termina em 1 minuto!**\n\n"
                     "⏳ **Tempo restante:** 1 minuto\n"
                     "💡 **Desejam adicionar mais 5 minutos de conversa?**\n"
-                    "🔒 Ambos precisam aceitar para estender o tempo!"
+                    "🔒 Ambos precisam aceitar para estender o tempo!\n"
+                    "🚫 **Lembrete:** Após este chat, NUNCA MAIS se encontrarão!"
                 ),
                 color=0xFFA500
             )
@@ -364,7 +396,8 @@ async def _auto_close_channel_after(canal, segundos=CHANNEL_DURATION):
                         "**🎉 +5 minutos adicionados!**\n\n"
                         f"⏰ **Tempo total:** {10 + (active_channels[canal.id]['extensions'] * 5)} minutos\n"
                         "💬 Continuem aproveitando a conversa!\n"
-                        "⏳ Novo aviso em 4 minutos..."
+                        "⏳ Novo aviso em 4 minutos...\n"
+                        "🚫 **Lembrete:** Após este chat, NUNCA MAIS se encontrarão!"
                     ),
                     color=0x66FF99
                 )
@@ -383,9 +416,11 @@ async def _auto_close_channel_after(canal, segundos=CHANNEL_DURATION):
             try:
                 msg = await canal.fetch_message(data["message_id"])
                 embed = discord.Embed(
-                    title="⏰ Tempo de Conversa Esgotado",
+                    title="⏰ Tempo de Conversa Esgotado - BLOQUEIO PERMANENTE",
                     description=(
                         "Seus **10 minutos** de conversa terminaram!\n\n"
+                        "🚫 **BLOQUEIO PERMANENTE ATIVADO:**\n"
+                        "⚠️ **Vocês NUNCA MAIS se encontrarão no iTinder!**\n\n"
                         "💫 Esperamos que tenha sido uma boa experiência.\n"
                         "🔍 **Você continua na fila procurando mais pessoas!**"
                     ),
@@ -447,9 +482,11 @@ class ExtensionView(discord.ui.View):
         # Se um usuário recusar, finalizar imediatamente
         try:
             embed = discord.Embed(
-                title="❌ Extensão Recusada",
+                title="❌ Extensão Recusada - BLOQUEIO PERMANENTE",
                 description=(
                     "Um dos usuários preferiu não estender o tempo.\n\n"
+                    "🚫 **BLOQUEIO PERMANENTE ATIVADO:**\n"
+                    "⚠️ **Vocês NUNCA MAIS se encontrarão!**\n\n"
                     "💫 Obrigado por usar o iTinder!\n"
                     "🔍 **Você continua na fila procurando mais pessoas!**"
                 ),
@@ -527,7 +564,8 @@ class PreferenceSetupView(discord.ui.View):
                 f"✅ **Perfil configurado com sucesso!**\n\n"
                 f"**Você:** {gender_display}\n"
                 f"**Procurando:** {preference_display}\n\n"
-                "💡 Agora você pode entrar na fila para encontrar alguém!"
+                "💡 Agora você pode entrar na fila para encontrar alguém!\n"
+                "🚫 **Lembrete:** Cada pessoa que você encontrar, NUNCA MAIS encontrará novamente!"
             ),
             color=0x66FF99
         )
@@ -559,7 +597,8 @@ class LeaveQueueView(discord.ui.View):
                     f"**Seu perfil:** {get_gender_display(user_genders.get(user_id, 'homem'))}\n"
                     f"**Procurando:** {get_preference_display(user_preferences.get(user_id, 'ambos'))}\n\n"
                     "💡 Volte ao canal principal para configurar perfil ou entrar na fila novamente!\n\n"
-                    "🔍 **Você não está mais procurando novas pessoas.**"
+                    "🔍 **Você não está mais procurando novas pessoas.**\n"
+                    "🚫 **Bloqueios permanentes anteriores continuam ativos.**"
                 ),
                 color=0xFF9999
             )
@@ -585,7 +624,7 @@ class IndividualView(discord.ui.View):
                     "• 🔍 **Procura contínua** - Encontre múltiplas pessoas\n"
                     "• ⏰ **10 minutos** de conversa por par\n"
                     "• 🎧 **Call secreta** durante o chat\n"
-                    "• ❌ **RECUSAR = NUNCA MAIS** encontrará a mesma pessoa\n"
+                    "• 🚫 **BLOQUEIO PERMANENTE** - NUNCA MAIS encontrará a mesma pessoa\n"
                     "• 💬 Chat 100% anônimo\n\n"
                     "⚙️ **Volte ao canal principal e clique em `Configurar Perfil`!**"
                 ),
@@ -617,7 +656,7 @@ class IndividualView(discord.ui.View):
                     "💡 **Você pode:**\n"
                     "• Conversar com múltiplas pessoas ao mesmo tempo\n"
                     "• Cada chat dura 10 minutos\n"
-                    "• ❌ **Recusar alguém = Nunca mais encontrará essa pessoa**\n"
+                    "• 🚫 **BLOQUEIO PERMANENTE** - Nunca mais encontrará a mesma pessoa\n"
                     "• Clique em **Sair da Fila** para parar de procurar"
                 ),
                 color=0x66FF99
@@ -660,7 +699,7 @@ class IndividualView(discord.ui.View):
                 "• 💬 **Chats simultâneos** com múltiplas pessoas\n"
                 "• ⏰ Cada chat dura **10 minutos**\n"
                 "• 🎧 **Call secreta** disponível\n"
-                "• ❌ **RECUSAR = NUNCA MAIS** encontrará essa pessoa\n\n"
+                "• 🚫 **BLOQUEIO PERMANENTE** - Nunca mais encontrará a mesma pessoa\n\n"
                 "💡 **Você receberá novos chats automaticamente!**"
             ),
             color=0x66FF99
@@ -719,7 +758,7 @@ class TicketView(discord.ui.View):
                     "• 🔍 **Procura contínua** - Encontre múltiplas pessoas\n"
                     "• ⏰ **10 minutos** de conversa por par\n"
                     "• 🎧 **Call secreta** durante o chat\n"
-                    "• ❌ **RECUSAR = NUNCA MAIS** encontrará a mesma pessoa\n"
+                    "• 🚫 **BLOQUEIO PERMANENTE** - NUNCA MAIS encontrará a mesma pessoa\n"
                     "• 💬 Chat 100% anônimo\n\n"
                     "⚙️ **Clique em `Configurar Perfil` no canal principal!**"
                 ),
@@ -743,9 +782,10 @@ class TicketView(discord.ui.View):
                 f"**Seu perfil:** {gender_display}\n"
                 f"**Procurando:** {preference_display}\n\n"
                 "🎯 **Modo de Procura Contínua**\n\n"
-                "⚠️ **ATENÇÃO IMPORTANTE:**\n"
-                "• ❌ **Se você recusar alguém, NUNCA MAIS encontrará essa pessoa**\n"
-                "• 💡 Pense bem antes de recusar uma conversa!\n\n"
+                "🚨 **BLOQUEIO PERMANENTE ATIVADO:**\n"
+                "• 🚫 **Cada pessoa que você encontrar, NUNCA MAIS encontrará novamente**\n"
+                "• 💡 Pense bem antes de recusar uma conversa!\n"
+                "• ⚠️ **Esta regra é permanente e irreversível**\n\n"
                 "💡 Clique em **Entrar na Fila** para começar a procurar múltiplas pessoas!"
             ),
             color=0x66FF99
@@ -791,7 +831,7 @@ class ConversationView(discord.ui.View):
                     f"⏰ **Aguardando ambos aceitarem...**\n"
                     f"⏳ **Chat será fechado em {ACCEPT_TIMEOUT//60} minutos se ninguém aceitar**\n"
                     "💡 **Lembrete:** 10 minutos de conversa após aceitar\n"
-                    "⚠️ **ATENÇÃO:** Recusar = Nunca mais encontrará esta pessoa"
+                    "🚨 **BLOQUEIO PERMANENTE:** Nunca mais se encontrarão após este encontro"
                 ),
                 color=0xFF6B9E
             )
@@ -817,8 +857,8 @@ class ConversationView(discord.ui.View):
                         "⏰ **Tempo:** 10 minutos\n"
                         "🎧 **Call secreta:** Disponível durante o chat\n"
                         "💬 **Chat:** Anônimo e privado\n\n"
-                        "🌟 **Dica:** Sejam criativos e respeitosos!\n"
-                        "📝 Compartilhem interesses, sonhos, histórias..."
+                        "🚨 **LEMBRE-SE:** Após esta conversa, **NUNCA MAIS** se encontrarão!\n"
+                        "🌟 **Aproveite bem este momento único!**"
                     ),
                     color=0x66FF99
                 )
@@ -839,9 +879,8 @@ class ConversationView(discord.ui.View):
             await interaction.response.send_message("❌ Você não pode interagir aqui.", ephemeral=True)
             return
 
-        # BLOQUEIO PERMANENTE - NUNCA MAIS
-        set_permanent_block(self.u1.id, self.u2.id)
-        print(f"🚫 BLOQUEIO PERMANENTE definido entre {self.u1.id} e {self.u2.id}")
+        # BLOQUEIO PERMANENTE - JÁ ESTÁ MARCADO NO ENCOUNTER_HISTORY
+        # Apenas confirma e encerra
         
         try:
             msg = await self.canal.fetch_message(self.message_id)
@@ -851,6 +890,7 @@ class ConversationView(discord.ui.View):
                     f"**{interaction.user.display_name} recusou a conversa.**\n\n"
                     "🚫 **BLOQUEIO PERMANENTE ATIVADO**\n"
                     "⚠️ **Vocês NUNCA MAIS se encontrarão no iTinder!**\n\n"
+                    "📝 **O encontro foi registrado no sistema permanentemente.**\n"
                     "💫 Não desanime! Ainda há muitas outras pessoas para conhecer."
                 ),
                 color=0xFF3333
@@ -898,7 +938,7 @@ class EncerrarView(discord.ui.View):
                     f"📞 **Canal:** {call_channel.mention}\n"
                     f"👥 **Participantes:** {self.u1.display_name} e {self.u2.display_name}\n\n"
                     "💡 **A call será automaticamente encerrada quando o chat terminar.**\n"
-                    "⚠️ **Lembrete:** A call é totalmente anônima e segura."
+                    "🚫 **Lembrete:** Após este chat, NUNCA MAIS se encontrarão!"
                 ),
                 color=0x66FF99
             )
@@ -922,9 +962,11 @@ class EncerrarView(discord.ui.View):
                     msg = None
             if msg:
                 embed = discord.Embed(
-                    title="🔒 Chat Encerrado",
+                    title="🔒 Chat Encerrado - BLOQUEIO PERMANENTE",
                     description=(
                         "O chat foi encerrado pelo usuário.\n\n"
+                        "🚫 **BLOQUEIO PERMANENTE ATIVADO:**\n"
+                        "⚠️ **Vocês NUNCA MAIS se encontrarão!**\n\n"
                         "💫 Obrigado por usar o iTinder!\n"
                         "🔍 **Você continua na fila procurando mais pessoas!**"
                     ),
@@ -935,7 +977,7 @@ class EncerrarView(discord.ui.View):
             pass
         
         await encerrar_canal_e_cleanup(self.canal)
-        await interaction.response.send_message("✅ Chat encerrado e apagado. Você continua na fila!", ephemeral=True)
+        await interaction.response.send_message("✅ Chat encerrado. 🚫 NUNCA MAIS encontrará esta pessoa! Você continua na fila.", ephemeral=True)
 
 @bot.tree.command(name="setupcarente", description="Configura o sistema iTinder (apenas admin)")
 async def setupcarente(interaction: discord.Interaction):
@@ -975,16 +1017,18 @@ async def setupcarente(interaction: discord.Interaction):
             "• 💬 **Vários chats ao mesmo tempo**\n"
             "• ⏰ **10 minutos** por conversa\n"
             "• 🎧 **Call secreta** durante o chat\n"
-            "• ❌ **RECUSAR = NUNCA MAIS** encontrará a pessoa\n\n"
+            "• 🚫 **BLOQUEIO PERMANENTE** - NUNCA MAIS encontrará a mesma pessoa\n\n"
             "⚙️ **PASSO A PASSO:**\n"
             "1. Clique em `⚙️ Configurar Perfil`\n"
             "2. Escolha sua identidade e preferência\n"
             "3. Clique em `💌 Entrar na Fila`\n"
             "4. **Converse com várias pessoas!**\n"
             "5. Clique em `Sair da Fila` quando quiser parar\n\n"
-            "⚠️ **ATENÇÃO IMPORTANTE:**\n"
-            "• **Se recusar alguém, NUNCA MAIS encontrará essa pessoa**\n"
-            "• Pense bem antes de recusar uma conversa!\n\n"
+            "🚨 **BLOQUEIO PERMANENTE - ATENÇÃO:**\n"
+            "• **Cada pessoa que você encontrar, NUNCA MAIS encontrará novamente**\n"
+            "• **Esta regra é permanente e irreversível**\n"
+            "• **Funciona em TODAS as situações:** conversa, recusa, tempo esgotado\n"
+            "• **Pense bem antes de cada interação!**\n\n"
             "⚠️ **ESTE CANAL FOI BLOQUEADO**\n"
             "Apenas os botões abaixo funcionam aqui."
         ),
@@ -999,6 +1043,24 @@ async def setupcarente(interaction: discord.Interaction):
         await interaction.response.send_message("✅ Sistema iTinder configurado com sucesso! Canal bloqueado para mensagens comuns.", ephemeral=True)
     except Exception:
         await interaction.response.send_message("❌ Erro ao enviar mensagem de setup", ephemeral=True)
+
+@bot.tree.command(name="reset_encounters", description="[ADMIN] Resetar todos os encontros e bloqueios")
+async def reset_encounters(interaction: discord.Interaction):
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("❌ Apenas administradores podem usar este comando.", ephemeral=True)
+        return
+    
+    global ENCOUNTER_HISTORY, PERMANENT_BLOCKS
+    ENCOUNTER_HISTORY.clear()
+    PERMANENT_BLOCKS.clear()
+    
+    await interaction.response.send_message(
+        "✅ **Todos os encontros e bloqueios foram resetados!**\n\n"
+        "📝 Histórico de encontros: LIMPO\n"
+        "🔒 Bloqueios permanentes: REMOVIDOS\n"
+        "🔄 Os usuários agora podem se encontrar novamente",
+        ephemeral=True
+    )
 
 @bot.event
 async def on_message(message):
