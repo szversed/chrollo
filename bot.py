@@ -437,7 +437,7 @@ async def _auto_close_channel_after(canal, segundos=CHANNEL_DURATION):
 class ExtensionView(discord.ui.View):
     """View para aceitar extensão de tempo"""
     def __init__(self, canal):
-        super().__init__(timeout=60)  # 1 minuto para responder
+        super().__init__(timeout=None)  # ⚡ TIMEOUT INFINITO
         self.canal = canal
 
     @discord.ui.button(label="✅ Sim, +5min", style=discord.ButtonStyle.success, custom_id="extend_yes")
@@ -501,7 +501,7 @@ class ExtensionView(discord.ui.View):
 
 class GenderSetupView(discord.ui.View):
     def __init__(self, setup_message):
-        super().__init__(timeout=None)
+        super().__init__(timeout=None)  # ⚡ TIMEOUT INFINITO
         self.setup_message = setup_message
 
     @discord.ui.button(label="👨🏻 Anônimo", style=discord.ButtonStyle.primary, custom_id="gender_homem")
@@ -530,7 +530,7 @@ class GenderSetupView(discord.ui.View):
 
 class PreferenceSetupView(discord.ui.View):
     def __init__(self, setup_message):
-        super().__init__(timeout=None)
+        super().__init__(timeout=None)  # ⚡ TIMEOUT INFINITO
         self.setup_message = setup_message
 
     @discord.ui.button(label="👨🏻 Anônimos", style=discord.ButtonStyle.primary, custom_id="pref_homem")
@@ -576,7 +576,7 @@ class PreferenceSetupView(discord.ui.View):
 
 class LeaveQueueView(discord.ui.View):
     def __init__(self, user_id):
-        super().__init__(timeout=None)
+        super().__init__(timeout=None)  # ⚡ TIMEOUT INFINITO
         self.user_id = user_id
 
     @discord.ui.button(label="🚪 Sair da Fila", style=discord.ButtonStyle.danger, custom_id="leavefila_button")
@@ -609,7 +609,7 @@ class LeaveQueueView(discord.ui.View):
 
 class IndividualView(discord.ui.View):
     def __init__(self):
-        super().__init__(timeout=None)
+        super().__init__(timeout=None)  # ⚡ TIMEOUT INFINITO
 
     @discord.ui.button(label="💌 Entrar na Fila", style=discord.ButtonStyle.success, custom_id="individual_entrar")
     async def entrar(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -717,7 +717,7 @@ class IndividualView(discord.ui.View):
 
 class TicketView(discord.ui.View):
     def __init__(self):
-        super().__init__(timeout=None)
+        super().__init__(timeout=None)  # ⚡ TIMEOUT INFINITO
 
     @discord.ui.button(label="👨🏻👩🏻 Configurar Perfil", style=discord.ButtonStyle.primary, custom_id="config_gender")
     async def config_gender(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -799,7 +799,7 @@ class TicketView(discord.ui.View):
 
 class ConversationView(discord.ui.View):
     def __init__(self, canal, u1, u2, message_id):
-        super().__init__(timeout=None)
+        super().__init__(timeout=None)  # ⚡ TIMEOUT INFINITO
         self.canal = canal
         self.u1 = u1
         self.u2 = u2
@@ -908,7 +908,7 @@ class ConversationView(discord.ui.View):
 
 class EncerrarView(discord.ui.View):
     def __init__(self, canal, u1, u2):
-        super().__init__(timeout=None)
+        super().__init__(timeout=None)  # ⚡ TIMEOUT INFINITO
         self.canal = canal
         self.u1 = u1
         self.u2 = u2
@@ -1119,6 +1119,10 @@ async def on_interaction(interaction: discord.Interaction):
 @bot.event
 async def on_ready():
     print(f"✅ iTinder online! Conectado como {bot.user.name}")
+    
+    # ⚡ REGISTRAR VIEWS PERSISTENTES PARA TIMEOUT INFINITO
+    bot.add_view(TicketView())
+    bot.add_view(IndividualView())
     
     guild = discord.Object(id=MINHA_GUILD_ID)
     try:
