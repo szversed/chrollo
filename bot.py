@@ -51,6 +51,17 @@ def mark_encounter(u1_id, u2_id):
     key = pair_key(u1_id, u2_id)
     ENCOUNTER_HISTORY[key] = True
 
+def get_gender_display(gender):
+    return "👨🏻 Anônimo" if gender == "homem" else "👩🏻 Anônima"
+
+def get_preference_display(pref):
+    if pref == "homem":
+        return "👨🏻 Anônimos"
+    elif pref == "mulher":
+        return "👩🏻 Anônimas"
+    else:
+        return "👨🏻👩🏻 Ambos"
+
 async def criar_call_secreta(guild, u1, u2):
     nome_call = f"💕 {u1.display_name} & {u2.display_name}"
     
@@ -206,9 +217,18 @@ async def tentar_formar_dupla(guild):
                     "extensions": 0
                 }
                 
+                gender1_display = get_gender_display(gender1)
+                gender2_display = get_gender_display(gender2)
+                
                 embed = discord.Embed(
                     title="💌 Par Encontrado!",
-                    description="🎯 **Encontramos alguém para você!**\n\n✅ **Aceite** para conversar por 10min\n❌ **Recuse** e nunca mais verá esta pessoa\n\n💡 Ambos precisam aceitar para começar!",
+                    description=(
+                        f"**{u1.display_name}** ({gender1_display}) & **{u2.display_name}** ({gender2_display})\n\n"
+                        "🎯 **Encontramos alguém para você!**\n\n"
+                        "✅ **Aceite** para conversar por 10min\n"
+                        "❌ **Recuse** e nunca mais verá esta pessoa\n\n"
+                        "💡 Ambos precisam aceitar para começar!"
+                    ),
                     color=0xFF6B9E
                 )
                 view = ConversationView(canal, u1, u2, message_id=0)
@@ -220,12 +240,14 @@ async def tentar_formar_dupla(guild):
                     await encerrar_canal_e_cleanup(canal)
                     continue
                 
+                # ENVIA MENSAGEM NO PV COM O CANAL CRIADO
+                aviso_text = f"💌 **Novo par encontrado!**\n\nVocê foi levado para {canal.mention}\n💬 **Aceite no canal para começar a conversar!**"
                 try:
-                    await u1.send("💌 **Novo par encontrado!** Vá para o canal criado.")
+                    await u1.send(aviso_text)
                 except Exception:
                     pass
                 try:
-                    await u2.send("💌 **Novo par encontrado!** Vá para o canal criado.")
+                    await u2.send(aviso_text)
                 except Exception:
                     pass
                 
@@ -242,7 +264,13 @@ async def _accept_timeout_handler(canal, timeout=ACCEPT_TIMEOUT):
         accepted = data.get("accepted", set())
         if len(accepted) < 2:
             try:
-                await canal.send("⏰ **Tempo esgotado!** Chat fechado.")
+                msg = await canal.fetch_message(data["message_id"])
+                embed = discord.Embed(
+                    title="⏰ Tempo Esgotado",
+                    description="O tempo para aceitar expirou.\n\n🚫 **Nunca mais verão esta pessoa!**",
+                    color=0xFF9999
+                )
+                await msg.edit(embed=embed, view=None)
             except Exception:
                 pass
             await asyncio.sleep(2)
@@ -363,8 +391,8 @@ class PreferenceSetupView(discord.ui.View):
         gender = user_genders.get(user_id, "homem")
         preference = user_preferences.get(user_id, "ambos")
         
-        gender_display = "👨🏻 Homem" if gender == "homem" else "👩🏻 Mulher"
-        preference_display = "👨🏻 Homens" if preference == "homem" else "👩🏻 Mulheres" if preference == "mulher" else "👨🏻👩🏻 Ambos"
+        gender_display = get_gender_display(gender)
+        preference_display = get_preference_display(preference)
         
         await self.setup_message.delete()
         
@@ -431,8 +459,8 @@ class IndividualView(discord.ui.View):
             return
 
         if user_queues.get(user.id, False):
-            gender_display = "👨🏻 Homem" if user_genders[user.id] == "homem" else "👩🏻 Mulher"
-            preference_display = "👨🏻 Homens" if user_preferences[user.id] == "homem" else "👩🏻 Mulheres" if user_preferences[user.id] == "mulher" else "👨🏻👩🏻 Ambos"
+            gender_display = get_gender_display(user_genders[user.id])
+            preference_display = get_preference_display(user_preferences[user.id])
             
             embed = discord.Embed(
                 title="🔍 Procurando Pessoas...",
@@ -463,8 +491,8 @@ class IndividualView(discord.ui.View):
         fila_carentes[:] = [entry for entry in fila_carentes if entry["user_id"] != user.id]
         fila_carentes.append(fila_entry)
         
-        gender_display = "👨🏻 Homem" if user_genders[user.id] == "homem" else "👩🏻 Mulher"
-        preference_display = "👨🏻 Homens" if user_preferences[user.id] == "homem" else "👩🏻 Mulheres" if user_preferences[user.id] == "mulher" else "👨🏻👩🏻 Ambos"
+        gender_display = get_gender_display(user_genders[user.id])
+        preference_display = get_preference_display(user_preferences[user.id])
         
         embed = discord.Embed(
             title="🔍 Procurando Pessoas...",
@@ -530,8 +558,8 @@ class TicketView(discord.ui.View):
                 user_messages[user.id] = await interaction.original_response()
             return
 
-        gender_display = "👨🏻 Homem" if user_genders[user.id] == "homem" else "👩🏻 Mulher"
-        preference_display = "👨🏻 Homens" if user_preferences[user.id] == "homem" else "👩🏻 Mulheres" if user_preferences[user.id] == "mulher" else "👨🏻👩🏻 Ambos"
+        gender_display = get_gender_display(user_genders[user.id])
+        preference_display = get_preference_display(user_preferences[user.id])
         
         embed_inicial = discord.Embed(
             title="💌 iTinder - Pronto para Conversar",
@@ -569,6 +597,22 @@ class ConversationView(discord.ui.View):
         accepted = data.setdefault("accepted", set())
         accepted.add(uid)
         
+        try:
+            msg = await self.canal.fetch_message(self.message_id)
+            embed = discord.Embed(
+                title="💌 Confirmação",
+                description=(
+                    f"{self.u1.display_name} {'✅' if self.u1.id in accepted else '⏳'}\n"
+                    f"{self.u2.display_name} {'✅' if self.u2.id in accepted else '⏳'}\n\n"
+                    f"⏰ **Aguardando ambos aceitarem...**\n"
+                    "💡 Ambos precisam aceitar para começar!"
+                ),
+                color=0xFF6B9E
+            )
+            await msg.edit(embed=embed, view=self)
+        except Exception:
+            pass
+        
         if self.u1.id in accepted and self.u2.id in accepted:
             try:
                 await self.canal.set_permissions(self.u1, send_messages=True, view_channel=True)
@@ -578,12 +622,13 @@ class ConversationView(discord.ui.View):
             
             enc_view = EncerrarView(self.canal, self.u1, self.u2)
             try:
+                msg = await self.canal.fetch_message(self.message_id)
                 embed = discord.Embed(
                     title="💫 Conversa Iniciada!",
                     description="⏰ **10 minutos** de conversa\n🎧 **Call disponível**\n🚫 **Nunca mais** se verão após este chat",
                     color=0x66FF99
                 )
-                await interaction.message.edit(embed=embed, view=enc_view)
+                await msg.edit(embed=embed, view=enc_view)
             except Exception:
                 pass
             
@@ -601,7 +646,13 @@ class ConversationView(discord.ui.View):
             return
 
         try:
-            await interaction.message.edit(content="❌ **Chat recusado!** Nunca mais verão esta pessoa.", view=None)
+            msg = await self.canal.fetch_message(self.message_id)
+            embed = discord.Embed(
+                title="❌ Chat Recusado",
+                description=f"**{interaction.user.display_name} recusou a conversa.**\n\n🚫 **Nunca mais se verão!**",
+                color=0xFF3333
+            )
+            await msg.edit(embed=embed, view=None)
         except Exception:
             pass
         
