@@ -289,7 +289,7 @@ async def _auto_close_channel_after(canal, segundos=CHANNEL_DURATION):
         try:
             embed = discord.Embed(
                 title="⏰ 1 Minuto Restante",
-                description="💡 **Querem +5 minutos?** Ambos precisam aceitar!",
+                description="💡 **Querem +5 minutos?** Clique no botão abaixo!",
                 color=0xFFA500
             )
             view = ExtensionView(canal)
@@ -304,22 +304,26 @@ async def _auto_close_channel_after(canal, segundos=CHANNEL_DURATION):
         return
         
     data = active_channels.get(canal.id)
-    if data and data.get("extensions", 0) > 0:
-        # Tempo estendido, reiniciar contador
-        active_channels[canal.id]["warning_sent"] = False
-        asyncio.create_task(_auto_close_channel_after(canal, 5 * 60))
-        return
-    
-    try:
-        await canal.send("⏰ **Tempo esgotado!** Chat finalizado.")
-        await asyncio.sleep(3)
-        await encerrar_canal_e_cleanup(canal)
-    except Exception:
-        pass
+    if data:
+        # VERIFICA SE ALGUÉM CLICOU NO BOTÃO DE +5 MINUTOS
+        if data.get("extensions", 0) > 0:
+            # Tempo estendido, reiniciar contador
+            active_channels[canal.id]["warning_sent"] = False
+            active_channels[canal.id]["extensions"] = 0  # Reset para próxima verificação
+            asyncio.create_task(_auto_close_channel_after(canal, 5 * 60))
+            return
+        else:
+            # NINGUÉM CLICOU NO +5 MINUTOS, FECHAR CANAL
+            try:
+                await canal.send("⏰ **Tempo esgotado!** Chat finalizado.")
+                await asyncio.sleep(3)
+                await encerrar_canal_e_cleanup(canal)
+            except Exception:
+                pass
 
 class ExtensionView(discord.ui.View):
     def __init__(self, canal):
-        super().__init__(timeout=60)
+        super().__init__(timeout=60)  # 60 segundos para responder
         self.canal = canal
 
     @discord.ui.button(label="✅ +5min", style=discord.ButtonStyle.success)
@@ -334,8 +338,16 @@ class ExtensionView(discord.ui.View):
             await interaction.response.send_message("❌ Você não pode interagir aqui.", ephemeral=True)
             return
         
+        # Marca que pelo menos uma pessoa quer extensão
         data["extensions"] = data.get("extensions", 0) + 1
         await interaction.response.send_message("✅ +5 minutos adicionados!", ephemeral=True)
+        
+        # Se ambos clicarem, já podemos processar
+        if data["extensions"] >= 2:
+            try:
+                await self.canal.send("🎉 **+5 minutos adicionados!** Continuem a conversa!")
+            except Exception:
+                pass
 
 class GenderSetupView(discord.ui.View):
     def __init__(self, setup_message):
