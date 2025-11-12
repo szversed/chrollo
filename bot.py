@@ -279,6 +279,7 @@ async def _accept_timeout_handler(canal, timeout=ACCEPT_TIMEOUT):
 async def _auto_close_channel_after(canal, segundos=CHANNEL_DURATION):
     remaining_time = segundos
     
+    # Aviso de 1 minuto restante
     await asyncio.sleep(remaining_time - 60)
     
     if canal.id not in active_channels:
@@ -289,11 +290,12 @@ async def _auto_close_channel_after(canal, segundos=CHANNEL_DURATION):
         try:
             embed = discord.Embed(
                 title="⏰ 1 Minuto Restante",
-                description="💡 **Querem +5 minutos?** Clique no botão abaixo!",
+                description="💡 **Querem +5 minutos?** Clique no botão abaixo!\n\n⚠️ **Ambos precisam aceitar para estender o tempo**",
                 color=0xFFA500
             )
             view = ExtensionView(canal)
-            await canal.send(embed=embed, view=view)
+            message = await canal.send(embed=embed, view=view)
+            view.message = message  # Para poder editar depois
             active_channels[canal.id]["warning_sent"] = True
         except Exception:
             pass
@@ -305,15 +307,14 @@ async def _auto_close_channel_after(canal, segundos=CHANNEL_DURATION):
         
     data = active_channels.get(canal.id)
     if data:
-        # VERIFICA SE ALGUÉM CLICOU NO BOTÃO DE +5 MINUTOS
+        # VERIFICA SE HOUVE EXTENSÃO (ambos aceitaram)
         if data.get("extensions", 0) > 0:
-            # Tempo estendido, reiniciar contador
-            active_channels[canal.id]["warning_sent"] = False
-            active_channels[canal.id]["extensions"] = 0  # Reset para próxima verificação
+            # Reduz o contador de extensões e reinicia
+            data["extensions"] = data["extensions"] - 1
+            data["warning_sent"] = False
             asyncio.create_task(_auto_close_channel_after(canal, 5 * 60))
-            return
         else:
-            # NINGUÉM CLICOU NO +5 MINUTOS, FECHAR CANAL
+            # NINGUÉM CLICOU OU APENAS 1 CLICOU, FECHAR CANAL
             try:
                 await canal.send("⏰ **Tempo esgotado!** Chat finalizado.")
                 await asyncio.sleep(3)
@@ -325,6 +326,7 @@ class ExtensionView(discord.ui.View):
     def __init__(self, canal):
         super().__init__(timeout=60)  # 60 segundos para responder
         self.canal = canal
+        self.extended_users = set()  # Controla quem já clicou
 
     @discord.ui.button(label="✅ +5min", style=discord.ButtonStyle.success)
     async def extend_yes(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -334,19 +336,58 @@ class ExtensionView(discord.ui.View):
             return
             
         user_id = interaction.user.id
-        if user_id not in [data.get("u1"), data.get("u2")]:
+        u1_id = data.get("u1")
+        u2_id = data.get("u2")
+        
+        if user_id not in [u1_id, u2_id]:
             await interaction.response.send_message("❌ Você não pode interagir aqui.", ephemeral=True)
             return
         
-        # Marca que pelo menos uma pessoa quer extensão
-        data["extensions"] = data.get("extensions", 0) + 1
-        await interaction.response.send_message("✅ +5 minutos adicionados!", ephemeral=True)
+        # Adiciona usuário à lista dos que querem extensão
+        self.extended_users.add(user_id)
         
-        # Se ambos clicarem, já podemos processar
-        if data["extensions"] >= 2:
+        # Busca os membros para mostrar nomes
+        guild = self.canal.guild
+        u1 = guild.get_member(u1_id) if u1_id else None
+        u2 = guild.get_member(u2_id) if u2_id else None
+        
+        # Atualiza a mensagem mostrando quem já aceitou
+        if len(self.extended_users) == 1:
+            # Primeira pessoa aceitou
+            accepted_user = u1 if user_id == u1_id else u2
+            embed = discord.Embed(
+                title="⏰ Pedido de Extensão",
+                description=f"✅ **{accepted_user.display_name}** quer +5 minutos\n⏳ Aguardando o outro usuário...",
+                color=0xFFA500
+            )
+            await interaction.response.edit_message(embed=embed, view=self)
+        else:
+            # Ambas as pessoas aceitaram
+            embed = discord.Embed(
+                title="🎉 Tempo Extendido!",
+                description="✅ **Ambos aceitaram! +5 minutos adicionados!**\n💬 Continuem a conversa!",
+                color=0x66FF99
+            )
+            await interaction.response.edit_message(embed=embed, view=None)
+            
+            # Marca no active_channels que o tempo foi extendido
+            data["extensions"] = data.get("extensions", 0) + 1
+            data["warning_sent"] = False  # Permite novo aviso após extensão
+            
+            # Reinicia o contador de auto-fechamento
+            asyncio.create_task(_auto_close_channel_after(self.canal, 5 * 60))
+
+    async def on_timeout(self):
+        # Se o tempo acabar e apenas uma pessoa tiver aceitado
+        if len(self.extended_users) == 1:
             try:
-                await self.canal.send("🎉 **+5 minutos adicionados!** Continuem a conversa!")
-            except Exception:
+                embed = discord.Embed(
+                    title="⏰ Extensão Não Aceita",
+                    description="❌ A outra pessoa não respondeu ao pedido de extensão.\nO tempo original continuará.",
+                    color=0xFF9999
+                )
+                await self.message.edit(embed=embed, view=None)
+            except:
                 pass
 
 class GenderSetupView(discord.ui.View):
