@@ -30,7 +30,7 @@ canal_bloqueado = False
 main_message_id = None
 user_messages = {}
 user_queues = {}
-user_queue_time = {}  # Controla tempo na fila
+user_queue_time = {}
 
 def pair_key(u1_id, u2_id):
     return frozenset({u1_id, u2_id})
@@ -126,10 +126,9 @@ async def tentar_formar_dupla(guild):
     while True:
         await asyncio.sleep(2)
         
-        # Remove usuários com mais de 24h na fila
         current_time = time.time()
         for user_id in list(user_queues.keys()):
-            if user_id in user_queue_time and current_time - user_queue_time[user_id] > 86400:  # 24 horas
+            if user_id in user_queue_time and current_time - user_queue_time[user_id] > 86400:
                 user_queues[user_id] = False
                 fila_carentes[:] = [entry for entry in fila_carentes if entry["user_id"] != user_id]
                 del user_queue_time[user_id]
@@ -150,7 +149,7 @@ async def tentar_formar_dupla(guild):
                 if not user_queues.get(u1_id, False) or not user_queues.get(u2_id, False):
                     continue
                 
-                if is_permanently_blocked(u1_id, u2_id) or have_encountered(u1_id, u2_id):
+                if is_permanently_blocked(u1_id, u2_id):
                     continue
                 
                 if any(channel_data.get("u1") == u1_id and channel_data.get("u2") == u2_id or 
@@ -203,8 +202,6 @@ async def tentar_formar_dupla(guild):
                 except Exception:
                     continue
                 
-                mark_encounter(u1_id, u2_id)
-                
                 active_channels[canal.id] = {
                     "u1": u1_id,
                     "u2": u2_id,
@@ -240,7 +237,6 @@ async def tentar_formar_dupla(guild):
                     await encerrar_canal_e_cleanup(canal)
                     continue
                 
-                # ENVIA MENSAGEM NO PV COM O CANAL CRIADO
                 aviso_text = f"💌 **Novo par encontrado!**\n\nVocê foi levado para {canal.mention}\n💬 **Aceite no canal para começar a conversar!**"
                 try:
                     await u1.send(aviso_text)
@@ -279,7 +275,6 @@ async def _accept_timeout_handler(canal, timeout=ACCEPT_TIMEOUT):
 async def _auto_close_channel_after(canal, segundos=CHANNEL_DURATION):
     remaining_time = segundos
     
-    # Aviso de 1 minuto restante
     await asyncio.sleep(remaining_time - 60)
     
     if canal.id not in active_channels:
@@ -295,7 +290,7 @@ async def _auto_close_channel_after(canal, segundos=CHANNEL_DURATION):
             )
             view = ExtensionView(canal)
             message = await canal.send(embed=embed, view=view)
-            view.message = message  # Para poder editar depois
+            view.message = message
             active_channels[canal.id]["warning_sent"] = True
         except Exception:
             pass
@@ -307,14 +302,11 @@ async def _auto_close_channel_after(canal, segundos=CHANNEL_DURATION):
         
     data = active_channels.get(canal.id)
     if data:
-        # VERIFICA SE HOUVE EXTENSÃO (ambos aceitaram)
         if data.get("extensions", 0) > 0:
-            # Reduz o contador de extensões e reinicia
             data["extensions"] = data["extensions"] - 1
             data["warning_sent"] = False
             asyncio.create_task(_auto_close_channel_after(canal, 5 * 60))
         else:
-            # NINGUÉM CLICOU OU APENAS 1 CLICOU, FECHAR CANAL
             try:
                 await canal.send("⏰ **Tempo esgotado!** Chat finalizado.")
                 await asyncio.sleep(3)
@@ -324,9 +316,9 @@ async def _auto_close_channel_after(canal, segundos=CHANNEL_DURATION):
 
 class ExtensionView(discord.ui.View):
     def __init__(self, canal):
-        super().__init__(timeout=60)  # 60 segundos para responder
+        super().__init__(timeout=60)
         self.canal = canal
-        self.extended_users = set()  # Controla quem já clicou
+        self.extended_users = set()
 
     @discord.ui.button(label="✅ +5min", style=discord.ButtonStyle.success)
     async def extend_yes(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -343,17 +335,13 @@ class ExtensionView(discord.ui.View):
             await interaction.response.send_message("❌ Você não pode interagir aqui.", ephemeral=True)
             return
         
-        # Adiciona usuário à lista dos que querem extensão
         self.extended_users.add(user_id)
         
-        # Busca os membros para mostrar nomes
         guild = self.canal.guild
         u1 = guild.get_member(u1_id) if u1_id else None
         u2 = guild.get_member(u2_id) if u2_id else None
         
-        # Atualiza a mensagem mostrando quem já aceitou
         if len(self.extended_users) == 1:
-            # Primeira pessoa aceitou
             accepted_user = u1 if user_id == u1_id else u2
             embed = discord.Embed(
                 title="⏰ Pedido de Extensão",
@@ -362,7 +350,6 @@ class ExtensionView(discord.ui.View):
             )
             await interaction.response.edit_message(embed=embed, view=self)
         else:
-            # Ambas as pessoas aceitaram
             embed = discord.Embed(
                 title="🎉 Tempo Extendido!",
                 description="✅ **Ambos aceitaram! +5 minutos adicionados!**\n💬 Continuem a conversa!",
@@ -370,15 +357,12 @@ class ExtensionView(discord.ui.View):
             )
             await interaction.response.edit_message(embed=embed, view=None)
             
-            # Marca no active_channels que o tempo foi extendido
             data["extensions"] = data.get("extensions", 0) + 1
-            data["warning_sent"] = False  # Permite novo aviso após extensão
+            data["warning_sent"] = False
             
-            # Reinicia o contador de auto-fechamento
             asyncio.create_task(_auto_close_channel_after(self.canal, 5 * 60))
 
     async def on_timeout(self):
-        # Se o tempo acabar e apenas uma pessoa tiver aceitado
         if len(self.extended_users) == 1:
             try:
                 embed = discord.Embed(
@@ -533,7 +517,7 @@ class IndividualView(discord.ui.View):
             return
 
         user_queues[user.id] = True
-        user_queue_time[user.id] = time.time()  # Marca tempo de entrada
+        user_queue_time[user.id] = time.time()
         
         fila_entry = {
             "user_id": user.id,
@@ -690,8 +674,8 @@ class ConversationView(discord.ui.View):
         
         await interaction.response.send_message("✅ Aceito!", ephemeral=True)
 
-    @discord.ui.button(label="❌ Recusar", style=discord.ButtonStyle.danger, custom_id="conv_recusar")
-    async def recusar(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(label="❌ Sair", style=discord.ButtonStyle.secondary, custom_id="conv_sair")
+    async def sair(self, interaction: discord.Interaction, button: discord.ui.Button):
         uid = interaction.user.id
         cid = self.canal.id
         if uid not in (self.u1.id, self.u2.id):
@@ -701,8 +685,35 @@ class ConversationView(discord.ui.View):
         try:
             msg = await self.canal.fetch_message(self.message_id)
             embed = discord.Embed(
-                title="❌ Chat Recusado",
-                description=f"**{interaction.user.display_name} recusou a conversa.**\n\n🚫 **Nunca mais se verão!**",
+                title="🚪 Usuário Saiu",
+                description=f"**{interaction.user.display_name} saiu da conversa.**\n\n💫 **Poderão se encontrar novamente!**",
+                color=0xFFA500
+            )
+            await msg.edit(embed=embed, view=None)
+        except Exception:
+            pass
+        
+        await asyncio.sleep(3)
+        await encerrar_canal_e_cleanup(self.canal)
+        await interaction.response.send_message("🚪 **Você saiu!** Poderá encontrar esta pessoa novamente.", ephemeral=True)
+
+    @discord.ui.button(label="🚫 Bloquear", style=discord.ButtonStyle.danger, custom_id="conv_bloquear")
+    async def bloquear(self, interaction: discord.Interaction, button: discord.ui.Button):
+        uid = interaction.user.id
+        cid = self.canal.id
+        if uid not in (self.u1.id, self.u2.id):
+            await interaction.response.send_message("❌ Você não pode interagir aqui.", ephemeral=True)
+            return
+
+        # Define bloqueio permanente
+        other_user_id = self.u2.id if uid == self.u1.id else self.u1.id
+        set_permanent_block(uid, other_user_id)
+
+        try:
+            msg = await self.canal.fetch_message(self.message_id)
+            embed = discord.Embed(
+                title="🚫 Usuário Bloqueado",
+                description=f"**{interaction.user.display_name} bloqueou permanentemente.**\n\n🚫 **Nunca mais se encontrarão!**",
                 color=0xFF3333
             )
             await msg.edit(embed=embed, view=None)
@@ -711,7 +722,7 @@ class ConversationView(discord.ui.View):
         
         await asyncio.sleep(3)
         await encerrar_canal_e_cleanup(self.canal)
-        await interaction.response.send_message("🚫 **Recusado!** Nunca mais verá esta pessoa.", ephemeral=True)
+        await interaction.response.send_message("🚫 **Bloqueado!** Nunca mais verá esta pessoa.", ephemeral=True)
 
 class EncerrarView(discord.ui.View):
     def __init__(self, canal, u1, u2):
@@ -742,13 +753,26 @@ class EncerrarView(discord.ui.View):
         else:
             await interaction.response.send_message("❌ Erro ao criar call.", ephemeral=True)
 
-    @discord.ui.button(label="🔒 Encerrar Chat", style=discord.ButtonStyle.danger, custom_id="encerrar_agora")
-    async def encerrar(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(label="🚪 Sair", style=discord.ButtonStyle.secondary, custom_id="sair_chat")
+    async def sair(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id not in (self.u1.id, self.u2.id):
             await interaction.response.send_message("❌ Você não pode encerrar.", ephemeral=True)
             return
 
-        await interaction.response.send_message("✅ **Chat encerrado!** Nunca mais verá esta pessoa.", ephemeral=True)
+        await interaction.response.send_message("🚪 **Você saiu!** Poderá encontrar esta pessoa novamente.", ephemeral=True)
+        await encerrar_canal_e_cleanup(self.canal)
+
+    @discord.ui.button(label="🚫 Bloquear", style=discord.ButtonStyle.danger, custom_id="bloquear_chat")
+    async def bloquear(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id not in (self.u1.id, self.u2.id):
+            await interaction.response.send_message("❌ Você não pode bloquear.", ephemeral=True)
+            return
+
+        # Define bloqueio permanente
+        other_user_id = self.u2.id if interaction.user.id == self.u1.id else self.u1.id
+        set_permanent_block(interaction.user.id, other_user_id)
+
+        await interaction.response.send_message("🚫 **Bloqueado!** Nunca mais verá esta pessoa.", ephemeral=True)
         await encerrar_canal_e_cleanup(self.canal)
 
 @bot.tree.command(name="setupcarente", description="Configura o sistema iTinder (apenas admin)")
@@ -820,6 +844,7 @@ async def on_ready():
     
     bot.add_view(TicketView())
     bot.add_view(IndividualView())
+    bot.add_view(EncerrarView(None, None, None))
     
     guild = discord.Object(id=MINHA_GUILD_ID)
     try:
