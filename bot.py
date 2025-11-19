@@ -4,6 +4,7 @@ from discord import app_commands
 import asyncio
 import time
 import os
+from collections import defaultdict
 
 MINHA_GUILD_ID = 1436733268912242790
 
@@ -32,6 +33,18 @@ user_messages = {}
 user_queues = {}
 user_queue_time = {}
 
+# === NOVAS VARIÁVEIS PARA OS SISTEMAS ===
+COOLDOWN_DURATION = 24 * 60 * 60  # 24 horas em segundos
+STRIKE_LIMIT = 3
+STRIKE_BLOCK_DURATION = 10 * 60  # 10 minutos em segundos
+
+# Dicionários para os novos sistemas
+cooldown_pairs = {}  # {frozenset({user1_id, user2_id}): expiration_time}
+user_strikes = defaultdict(int)  # {user_id: strike_count}
+user_strike_expiry = {}  # {user_id: expiry_time}
+strike_blocked_users = {}  # {user_id: unblock_time}
+user_pending_invites = defaultdict(list)  # {user_id: [invite_timestamps]}
+
 def pair_key(u1_id, u2_id):
     return frozenset({u1_id, u2_id})
 
@@ -50,6 +63,75 @@ def have_encountered(u1_id, u2_id):
 def mark_encounter(u1_id, u2_id):
     key = pair_key(u1_id, u2_id)
     ENCOUNTER_HISTORY[key] = True
+
+# === NOVAS FUNÇÕES PARA COOLDOWN ===
+def is_on_cooldown(u1_id, u2_id):
+    """Verifica se um par está em cooldown"""
+    key = pair_key(u1_id, u2_id)
+    if key in cooldown_pairs:
+        if time.time() < cooldown_pairs[key]:
+            return True
+        else:
+            # Cooldown expirado, remove do dicionário
+            del cooldown_pairs[key]
+    return False
+
+def set_cooldown(u1_id, u2_id):
+    """Define cooldown de 24 horas para um par"""
+    key = pair_key(u1_id, u2_id)
+    cooldown_pairs[key] = time.time() + COOLDOWN_DURATION
+
+# === NOVAS FUNÇÕES PARA STRIKE SYSTEM ===
+def add_strike(user_id):
+    """Adiciona um strike ao usuário e verifica se deve bloquear"""
+    current_time = time.time()
+    
+    # Limpa strikes expirados (strikes expiram após 1 hora)
+    user_pending_invites[user_id] = [ts for ts in user_pending_invites[user_id] 
+                                   if current_time - ts < 3600]
+    
+    # Adiciona o novo convite
+    user_pending_invites[user_id].append(current_time)
+    
+    # Se tem 3 ou mais convites não respondidos em 1 hora, adiciona strike
+    if len(user_pending_invites[user_id]) >= STRIKE_LIMIT:
+        user_strikes[user_id] += 1
+        user_strike_expiry[user_id] = current_time + 3600  # Strike expira em 1 hora
+        
+        # Limpa os convites pendentes
+        user_pending_invites[user_id].clear()
+        
+        # Se atingiu o limite de strikes, bloqueia
+        if user_strikes[user_id] >= STRIKE_LIMIT:
+            strike_blocked_users[user_id] = current_time + STRIKE_BLOCK_DURATION
+            return True  # Usuário foi bloqueado
+    
+    return False  # Usuário não foi bloqueado
+
+def is_strike_blocked(user_id):
+    """Verifica se o usuário está bloqueado por strikes"""
+    if user_id in strike_blocked_users:
+        if time.time() < strike_blocked_users[user_id]:
+            return True
+        else:
+            # Bloqueio expirado, remove do dicionário
+            del strike_blocked_users[user_id]
+            user_strikes[user_id] = 0  # Reseta strikes após bloqueio
+    return False
+
+def get_strike_info(user_id):
+    """Retorna informações sobre strikes do usuário"""
+    current_time = time.time()
+    
+    # Limpa strikes expirados
+    if user_id in user_strike_expiry and current_time > user_strike_expiry[user_id]:
+        user_strikes[user_id] = 0
+        user_pending_invites[user_id].clear()
+    
+    pending_count = len(user_pending_invites[user_id])
+    strike_count = user_strikes[user_id]
+    
+    return pending_count, strike_count
 
 def get_gender_display(gender):
     return "👨🏻 Anônimo" if gender == "homem" else "👩🏻 Anônima"
@@ -103,6 +185,8 @@ async def encerrar_canal_e_cleanup(canal):
         
         if u1_id and u2_id:
             mark_encounter(u1_id, u2_id)
+            # === ADICIONA COOLDOWN AO PAR ===
+            set_cooldown(u1_id, u2_id)
         
         call_channel = data.get("call_channel")
         if call_channel:
@@ -149,7 +233,15 @@ async def tentar_formar_dupla(guild):
                 if not user_queues.get(u1_id, False) or not user_queues.get(u2_id, False):
                     continue
                 
+                # === VERIFICA SE USUÁRIO ESTÁ BLOQUEADO POR STRIKES ===
+                if is_strike_blocked(u1_id) or is_strike_blocked(u2_id):
+                    continue
+                
                 if is_permanently_blocked(u1_id, u2_id):
+                    continue
+                
+                # === VERIFICA SE O PAR ESTÁ EM COOLDOWN ===
+                if is_on_cooldown(u1_id, u2_id):
                     continue
                 
                 if any(channel_data.get("u1") == u1_id and channel_data.get("u2") == u2_id or 
@@ -174,6 +266,10 @@ async def tentar_formar_dupla(guild):
                 u2 = guild.get_member(u2_id)
                 if not u1 or not u2:
                     continue
+                
+                # === REGISTRA CONVITE PENDENTE PARA AMBOS OS USUÁRIOS ===
+                add_strike(u1_id)
+                add_strike(u2_id)
                 
                 nome_canal = f"💕-{u1.display_name[:10]}-{u2.display_name[:10]}"
         
@@ -477,6 +573,24 @@ class IndividualView(discord.ui.View):
     async def entrar(self, interaction: discord.Interaction, button: discord.ui.Button):
         user = interaction.user
         
+        # === VERIFICA SE USUÁRIO ESTÁ BLOQUEADO POR STRIKES ===
+        if is_strike_blocked(user.id):
+            remaining_time = strike_blocked_users[user.id] - time.time()
+            minutes = int(remaining_time // 60)
+            seconds = int(remaining_time % 60)
+            
+            embed = discord.Embed(
+                title="🚫 Bloqueado Temporariamente",
+                description=(
+                    f"⏰ **Você está bloqueado por {minutes} minutos e {seconds} segundos**\n\n"
+                    "💡 **Motivo:** Você recebeu muitos convites e não aceitou nenhum\n"
+                    "✅ **Solução:** Aguarde o bloqueio expirar automaticamente"
+                ),
+                color=0xFF3333
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        
         if user.id not in user_genders or user.id not in user_preferences:
             embed_explicacao = discord.Embed(
                 title="💌 iTinder",
@@ -499,9 +613,26 @@ class IndividualView(discord.ui.View):
             gender_display = get_gender_display(user_genders[user.id])
             preference_display = get_preference_display(user_preferences[user.id])
             
+            # === MOSTRA INFORMAÇÕES DE STRIKES ===
+            pending_count, strike_count = get_strike_info(user.id)
+            strike_info = ""
+            if pending_count > 0:
+                strike_info += f"📨 **Convites pendentes:** {pending_count}/3\n"
+            if strike_count > 0:
+                strike_info += f"⚠️ **Strikes:** {strike_count}/3\n"
+            
             embed = discord.Embed(
                 title="🔍 Procurando Pessoas...",
-                description=f"**Seu perfil:** {gender_display}\n**Procurando:** {preference_display}\n\n💫 **Você está na fila!**\n⏰ Saída automática em 24h\n💬 Conversas de 10min\n🎧 Call disponível\n🚫 Nunca mais verá a mesma pessoa",
+                description=(
+                    f"**Seu perfil:** {gender_display}\n"
+                    f"**Procurando:** {preference_display}\n\n"
+                    f"{strike_info}\n"
+                    f"💫 **Você está na fila!**\n"
+                    f"⏰ Saída automática em 24h\n"
+                    f"💬 Conversas de 10min\n"
+                    f"🎧 Call disponível\n"
+                    f"🚫 Nunca mais verá a mesma pessoa"
+                ),
                 color=0x66FF99
             )
             
@@ -531,9 +662,26 @@ class IndividualView(discord.ui.View):
         gender_display = get_gender_display(user_genders[user.id])
         preference_display = get_preference_display(user_preferences[user.id])
         
+        # === MOSTRA INFORMAÇÕES DE STRIKES ===
+        pending_count, strike_count = get_strike_info(user.id)
+        strike_info = ""
+        if pending_count > 0:
+            strike_info += f"📨 **Convites pendentes:** {pending_count}/3\n"
+        if strike_count > 0:
+            strike_info += f"⚠️ **Strikes:** {strike_count}/3\n"
+        
         embed = discord.Embed(
             title="🔍 Procurando Pessoas...",
-            description=f"**Seu perfil:** {gender_display}\n**Procurando:** {preference_display}\n\n💫 **Você está na fila!**\n⏰ Saída automática em 24h\n💬 Conversas de 10min\n🎧 Call disponível\n🚫 Nunca mais verá a mesma pessoa",
+            description=(
+                f"**Seu perfil:** {gender_display}\n"
+                f"**Procurando:** {preference_display}\n\n"
+                f"{strike_info}\n"
+                f"💫 **Você está na fila!**\n"
+                f"⏰ Saída automática em 24h\n"
+                f"💬 Conversas de 10min\n"
+                f"🎧 Call disponível\n"
+                f"🚫 Nunca mais verá a mesma pessoa"
+            ),
             color=0x66FF99
         )
         
@@ -580,6 +728,24 @@ class TicketView(discord.ui.View):
     @discord.ui.button(label="💌 Entrar na Fila", style=discord.ButtonStyle.success, custom_id="ticket_entrar")
     async def entrar(self, interaction: discord.Interaction, button: discord.ui.Button):
         user = interaction.user
+        
+        # === VERIFICA SE USUÁRIO ESTÁ BLOQUEADO POR STRIKES ===
+        if is_strike_blocked(user.id):
+            remaining_time = strike_blocked_users[user.id] - time.time()
+            minutes = int(remaining_time // 60)
+            seconds = int(remaining_time % 60)
+            
+            embed = discord.Embed(
+                title="🚫 Bloqueado Temporariamente",
+                description=(
+                    f"⏰ **Você está bloqueado por {minutes} minutos e {seconds} segundos**\n\n"
+                    "💡 **Motivo:** Você recebeu muitos convites e não aceitou nenhum\n"
+                    "✅ **Solução:** Aguarde o bloqueio expirar automaticamente"
+                ),
+                color=0xFF3333
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
         
         if user.id not in user_genders or user.id not in user_preferences:
             embed_explicacao = discord.Embed(
@@ -633,6 +799,10 @@ class ConversationView(discord.ui.View):
         
         accepted = data.setdefault("accepted", set())
         accepted.add(uid)
+        
+        # === REMOVE STRIKES AO ACEITAR ===
+        if uid in user_pending_invites:
+            user_pending_invites[uid].clear()
         
         try:
             msg = await self.canal.fetch_message(self.message_id)
@@ -825,7 +995,58 @@ async def reset_encounters(interaction: discord.Interaction):
     
     ENCOUNTER_HISTORY.clear()
     PERMANENT_BLOCKS.clear()
-    await interaction.response.send_message("✅ **Encontros resetados!**", ephemeral=True)
+    cooldown_pairs.clear()
+    user_strikes.clear()
+    user_strike_expiry.clear()
+    strike_blocked_users.clear()
+    user_pending_invites.clear()
+    
+    await interaction.response.send_message("✅ **Todos os sistemas resetados!**", ephemeral=True)
+
+@bot.tree.command(name="strike_info", description="Ver suas informações de strikes")
+async def strike_info(interaction: discord.Interaction):
+    pending_count, strike_count = get_strike_info(interaction.user.id)
+    
+    embed = discord.Embed(
+        title="📊 Suas Informações de Strikes",
+        color=0xFF6B9E
+    )
+    
+    embed.add_field(
+        name="📨 Convites Pendentes",
+        value=f"{pending_count}/3 (expira em 1 hora)",
+        inline=False
+    )
+    
+    embed.add_field(
+        name="⚠️ Strikes Atuais", 
+        value=f"{strike_count}/3 (expira em 1 hora)",
+        inline=False
+    )
+    
+    if is_strike_blocked(interaction.user.id):
+        remaining_time = strike_blocked_users[interaction.user.id] - time.time()
+        minutes = int(remaining_time // 60)
+        seconds = int(remaining_time % 60)
+        embed.add_field(
+            name="🚫 Status de Bloqueio",
+            value=f"**BLOQUEADO** por {minutes}min {seconds}s",
+            inline=False
+        )
+    else:
+        embed.add_field(
+            name="✅ Status",
+            value="**NÃO BLOQUEADO**",
+            inline=False
+        )
+    
+    embed.add_field(
+        name="💡 Como Funciona",
+        value="3 convites não aceitos = 1 strike\n3 strikes = bloqueio de 10min",
+        inline=False
+    )
+    
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @bot.event
 async def on_message(message):
