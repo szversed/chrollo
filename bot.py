@@ -267,9 +267,16 @@ async def tentar_formar_dupla(guild):
                 if not u1 or not u2:
                     continue
                 
-                # === REGISTRA CONVITE PENDENTE PARA AMBOS OS USUÁRIOS ===
-                add_strike(u1_id)
-                add_strike(u2_id)
+                # === CORREÇÃO: REGISTRA CONVITE PENDENTE APENAS (NÃO ADICIONA STRIKE AINDA) ===
+                current_time = time.time()
+                user_pending_invites[u1_id].append(current_time)
+                user_pending_invites[u2_id].append(current_time)
+                
+                # Limpa convites antigos (mais de 1 hora)
+                user_pending_invites[u1_id] = [ts for ts in user_pending_invites[u1_id] 
+                                             if current_time - ts < 3600]
+                user_pending_invites[u2_id] = [ts for ts in user_pending_invites[u2_id] 
+                                             if current_time - ts < 3600]
                 
                 nome_canal = f"💕-{u1.display_name[:10]}-{u2.display_name[:10]}"
         
@@ -354,7 +361,16 @@ async def _accept_timeout_handler(canal, timeout=ACCEPT_TIMEOUT):
     
     if not data.get("started", False):
         accepted = data.get("accepted", set())
+        u1_id = data.get("u1")
+        u2_id = data.get("u2")
+        
         if len(accepted) < 2:
+            # === CORREÇÃO: APLICA STRIKE APENAS PARA QUEM NÃO ACEITOU ===
+            if u1_id and u1_id not in accepted:
+                add_strike(u1_id)  # Strike para quem ignorou
+            if u2_id and u2_id not in accepted:
+                add_strike(u2_id)  # Strike para quem ignorou
+            
             try:
                 msg = await canal.fetch_message(data["message_id"])
                 embed = discord.Embed(
@@ -800,9 +816,12 @@ class ConversationView(discord.ui.View):
         accepted = data.setdefault("accepted", set())
         accepted.add(uid)
         
-        # === REMOVE STRIKES AO ACEITAR ===
+        # === CORREÇÃO: REMOVE O CONVITE PENDENTE AO ACEITAR (SEM STRIKE) ===
+        current_time = time.time()
         if uid in user_pending_invites:
-            user_pending_invites[uid].clear()
+            # Remove o convite mais recente (se houver)
+            if user_pending_invites[uid]:
+                user_pending_invites[uid].pop()
         
         try:
             msg = await self.canal.fetch_message(self.message_id)
@@ -891,7 +910,7 @@ class ConversationView(discord.ui.View):
             pass
         
         await asyncio.sleep(3)
-        await encerrar_canal_e_cleanup(self.canal)
+        await encerrar_canal_e_cleanup(canal)
         await interaction.response.send_message("🚫 **Bloqueado!** Nunca mais verá esta pessoa.", ephemeral=True)
 
 class EncerrarView(discord.ui.View):
