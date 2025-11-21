@@ -35,7 +35,7 @@ user_queue_time = {}
 
 # === NOVAS VARIÁVEIS PARA OS SISTEMAS ===
 COOLDOWN_DURATION = 12 * 60 * 60  # 12 horas em segundos
-STRIKE_LIMIT = 3
+STRIKE_LIMIT = 5  # ALTERADO: 5 convites para 1 strike
 STRIKE_BLOCK_DURATION = 10 * 60  # 10 minutos em segundos
 
 # Dicionários para os novos sistemas
@@ -44,7 +44,6 @@ user_strikes = defaultdict(int)  # {user_id: strike_count}
 user_strike_expiry = {}  # {user_id: expiry_time}
 strike_blocked_users = {}  # {user_id: unblock_time}
 user_pending_invites = defaultdict(list)  # {user_id: [invite_timestamps]}
-user_ignored_invites = defaultdict(int)  # {user_id: ignored_count} - NOVO: conta convites ignorados
 
 def pair_key(u1_id, u2_id):
     return frozenset({u1_id, u2_id})
@@ -94,7 +93,7 @@ def add_pending_invite(user_id):
     # Adiciona o novo convite
     user_pending_invites[user_id].append(current_time)
     
-    # Se tem 3 ou mais convites não respondidos em 1 hora, adiciona strike
+    # ALTERADO: Se tem 5 ou mais convites não respondidos em 1 hora, adiciona strike
     if len(user_pending_invites[user_id]) >= STRIKE_LIMIT:
         return add_strike(user_id)
     
@@ -109,7 +108,7 @@ def add_strike(user_id):
     user_pending_invites[user_id].clear()
     
     # Se atingiu o limite de strikes, bloqueia
-    if user_strikes[user_id] >= STRIKE_LIMIT:
+    if user_strikes[user_id] >= 3:  # Mantém 3 strikes para bloqueio
         strike_blocked_users[user_id] = time.time() + STRIKE_BLOCK_DURATION
         return True  # Usuário foi bloqueado
     
@@ -475,7 +474,7 @@ class ExtensionView(discord.ui.View):
         self.canal = canal
         self.extended_users = set()
 
-    @discord.ui.button(label="✅ +5min", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="✅ +5min", style=discord.ButtonStyle.success, custom_id="extend_yes")
     async def extend_yes(self, interaction: discord.Interaction, button: discord.ui.Button):
         data = active_channels.get(self.canal.id)
         if not data:
@@ -676,7 +675,7 @@ class IndividualView(discord.ui.View):
             pending_count, strike_count = get_strike_info(user.id)
             strike_info = ""
             if pending_count > 0:
-                strike_info += f"📨 **Convites pendentes:** {pending_count}/3\n"
+                strike_info += f"📨 **Convites pendentes:** {pending_count}/5\n"  # ALTERADO: /5
             if strike_count > 0:
                 strike_info += f"⚠️ **Strikes:** {strike_count}/3\n"
             
@@ -725,7 +724,7 @@ class IndividualView(discord.ui.View):
         pending_count, strike_count = get_strike_info(user.id)
         strike_info = ""
         if pending_count > 0:
-            strike_info += f"📨 **Convites pendentes:** {pending_count}/3\n"
+            strike_info += f"📨 **Convites pendentes:** {pending_count}/5\n"  # ALTERADO: /5
         if strike_count > 0:
             strike_info += f"⚠️ **Strikes:** {strike_count}/3\n"
         
@@ -1078,7 +1077,7 @@ async def strike_info(interaction: discord.Interaction):
     
     embed.add_field(
         name="📨 Convites Pendentes",
-        value=f"{pending_count}/3 (expira em 1 hora)",
+        value=f"{pending_count}/5 (expira em 1 hora)",  # ALTERADO: /5
         inline=False
     )
     
@@ -1106,7 +1105,7 @@ async def strike_info(interaction: discord.Interaction):
     
     embed.add_field(
         name="💡 Como Funciona",
-        value="3 convites não aceitos = 1 strike\n3 strikes = bloqueio de 10min",
+        value="5 convites não aceitos = 1 strike\n3 strikes = bloqueio de 10min",  # ALTERADO: 5 convites
         inline=False
     )
     
@@ -1127,9 +1126,17 @@ async def on_message(message):
 async def on_ready():
     print(f"✅ iTinder online! {bot.user.name}")
     
+    # CORREÇÃO: Adicionar todas as views persistentes
     bot.add_view(TicketView())
     bot.add_view(IndividualView())
+    bot.add_view(GenderSetupView(None))
+    bot.add_view(PreferenceSetupView(None))
+    bot.add_view(LeaveQueueView(0))
+    
+    # CORREÇÃO IMPORTANTE: Registrar as views das conversas também
+    bot.add_view(ConversationView(None, None, None, 0))
     bot.add_view(EncerrarView(None, None, None))
+    bot.add_view(ExtensionView(None))
     
     guild = discord.Object(id=MINHA_GUILD_ID)
     try:
