@@ -34,16 +34,17 @@ user_queues = {}
 user_queue_time = {}
 
 # === NOVAS VARIÁVEIS PARA OS SISTEMAS ===
-COOLDOWN_DURATION = 24 * 60 * 60  # 24 horas em segundos
+COOLDOWN_DURATION = 12 * 60 * 60  # 12 horas em segundos
 STRIKE_LIMIT = 3
 STRIKE_BLOCK_DURATION = 10 * 60  # 10 minutos em segundos
 
 # Dicionários para os novos sistemas
-cooldown_pairs = {}  # {frozenset({user1_id, user2_id}): expiration_time}
+cooldown_pairs = {}  # {frozenset({user1_id, u2_id}): expiration_time}
 user_strikes = defaultdict(int)  # {user_id: strike_count}
 user_strike_expiry = {}  # {user_id: expiry_time}
 strike_blocked_users = {}  # {user_id: unblock_time}
 user_pending_invites = defaultdict(list)  # {user_id: [invite_timestamps]}
+user_ignored_invites = defaultdict(int)  # {user_id: ignored_count} - NOVO: conta convites ignorados
 
 def pair_key(u1_id, u2_id):
     return frozenset({u1_id, u2_id})
@@ -77,16 +78,16 @@ def is_on_cooldown(u1_id, u2_id):
     return False
 
 def set_cooldown(u1_id, u2_id):
-    """Define cooldown de 24 horas para um par"""
+    """Define cooldown de 12 horas para um par"""
     key = pair_key(u1_id, u2_id)
     cooldown_pairs[key] = time.time() + COOLDOWN_DURATION
 
-# === NOVAS FUNÇÕES PARA STRIKE SYSTEM ===
-def add_strike(user_id):
-    """Adiciona um strike ao usuário e verifica se deve bloquear"""
+# === NOVAS FUNÇÕES PARA STRIKE SYSTEM - CORRIGIDAS ===
+def add_pending_invite(user_id):
+    """Adiciona um convite pendente para o usuário"""
     current_time = time.time()
     
-    # Limpa strikes expirados (strikes expiram após 1 hora)
+    # Limpa convites antigos (mais de 1 hora)
     user_pending_invites[user_id] = [ts for ts in user_pending_invites[user_id] 
                                    if current_time - ts < 3600]
     
@@ -95,18 +96,29 @@ def add_strike(user_id):
     
     # Se tem 3 ou mais convites não respondidos em 1 hora, adiciona strike
     if len(user_pending_invites[user_id]) >= STRIKE_LIMIT:
-        user_strikes[user_id] += 1
-        user_strike_expiry[user_id] = current_time + 3600  # Strike expira em 1 hora
-        
-        # Limpa os convites pendentes
-        user_pending_invites[user_id].clear()
-        
-        # Se atingiu o limite de strikes, bloqueia
-        if user_strikes[user_id] >= STRIKE_LIMIT:
-            strike_blocked_users[user_id] = current_time + STRIKE_BLOCK_DURATION
-            return True  # Usuário foi bloqueado
+        return add_strike(user_id)
+    
+    return False
+
+def add_strike(user_id):
+    """Adiciona um strike ao usuário e verifica se deve bloquear"""
+    user_strikes[user_id] += 1
+    user_strike_expiry[user_id] = time.time() + 3600  # Strike expira em 1 hora
+    
+    # Limpa os convites pendentes
+    user_pending_invites[user_id].clear()
+    
+    # Se atingiu o limite de strikes, bloqueia
+    if user_strikes[user_id] >= STRIKE_LIMIT:
+        strike_blocked_users[user_id] = time.time() + STRIKE_BLOCK_DURATION
+        return True  # Usuário foi bloqueado
     
     return False  # Usuário não foi bloqueado
+
+def remove_pending_invite(user_id):
+    """Remove um convite pendente (quando o usuário aceita ou recusa)"""
+    if user_id in user_pending_invites and user_pending_invites[user_id]:
+        user_pending_invites[user_id].pop()
 
 def is_strike_blocked(user_id):
     """Verifica se o usuário está bloqueado por strikes"""
@@ -212,10 +224,22 @@ async def tentar_formar_dupla(guild):
         
         current_time = time.time()
         for user_id in list(user_queues.keys()):
-            if user_id in user_queue_time and current_time - user_queue_time[user_id] > 86400:
+            if user_id in user_queue_time and current_time - user_queue_time[user_id] > 43200:  # 12 horas em segundos
                 user_queues[user_id] = False
                 fila_carentes[:] = [entry for entry in fila_carentes if entry["user_id"] != user_id]
                 del user_queue_time[user_id]
+                
+                # Remove mensagem do usuário se existir
+                if user_id in user_messages:
+                    try:
+                        embed = discord.Embed(
+                            title="⏰ Saída Automática",
+                            description="💤 **Você saiu automaticamente da fila após 12 horas**\n\n💡 Entre novamente quando quiser conversar!",
+                            color=0xFF9999
+                        )
+                        await user_messages[user_id].edit(embed=embed, view=IndividualView())
+                    except:
+                        pass
         
         usuarios_na_fila = [entry for entry in fila_carentes if user_queues.get(entry["user_id"], False)]
         
@@ -267,16 +291,9 @@ async def tentar_formar_dupla(guild):
                 if not u1 or not u2:
                     continue
                 
-                # === CORREÇÃO: REGISTRA CONVITE PENDENTE APENAS (NÃO ADICIONA STRIKE AINDA) ===
-                current_time = time.time()
-                user_pending_invites[u1_id].append(current_time)
-                user_pending_invites[u2_id].append(current_time)
-                
-                # Limpa convites antigos (mais de 1 hora)
-                user_pending_invites[u1_id] = [ts for ts in user_pending_invites[u1_id] 
-                                             if current_time - ts < 3600]
-                user_pending_invites[u2_id] = [ts for ts in user_pending_invites[u2_id] 
-                                             if current_time - ts < 3600]
+                # === REGISTRA CONVITE PENDENTE PARA AMBOS ===
+                add_pending_invite(u1_id)
+                add_pending_invite(u2_id)
                 
                 nome_canal = f"💕-{u1.display_name[:10]}-{u2.display_name[:10]}"
         
@@ -326,7 +343,7 @@ async def tentar_formar_dupla(guild):
                         f"**{u1.display_name}** ({gender1_display}) & **{u2.display_name}** ({gender2_display})\n\n"
                         "🎯 **Encontramos alguém para você!**\n\n"
                         "✅ **Aceite** para conversar por 10min\n"
-                        "❌ **Recuse** e nunca mais verá esta pessoa\n\n"
+                        "❌ **Recuse** e poderá se encontrar novamente após 12 horas\n\n"
                         "💡 Ambos precisam aceitar para começar!"
                     ),
                     color=0xFF6B9E
@@ -367,15 +384,41 @@ async def _accept_timeout_handler(canal, timeout=ACCEPT_TIMEOUT):
         if len(accepted) < 2:
             # === CORREÇÃO: APLICA STRIKE APENAS PARA QUEM NÃO ACEITOU ===
             if u1_id and u1_id not in accepted:
-                add_strike(u1_id)  # Strike para quem ignorou
+                # Verifica se já tem convites pendentes e adiciona strike se necessário
+                was_blocked = add_pending_invite(u1_id)
+                if was_blocked:
+                    try:
+                        user = canal.guild.get_member(u1_id)
+                        if user:
+                            embed = discord.Embed(
+                                title="🚫 Bloqueado por Strikes",
+                                description="⏰ **Você foi bloqueado por 10 minutos!**\n\n💡 **Motivo:** Você ignorou muitos convites seguidos\n✅ **Solução:** Aguarde o bloqueio expirar automaticamente",
+                                color=0xFF3333
+                            )
+                            await user.send(embed=embed)
+                    except:
+                        pass
+                    
             if u2_id and u2_id not in accepted:
-                add_strike(u2_id)  # Strike para quem ignorou
+                was_blocked = add_pending_invite(u2_id)
+                if was_blocked:
+                    try:
+                        user = canal.guild.get_member(u2_id)
+                        if user:
+                            embed = discord.Embed(
+                                title="🚫 Bloqueado por Strikes",
+                                description="⏰ **Você foi bloqueado por 10 minutos!**\n\n💡 **Motivo:** Você ignorou muitos convites seguidos\n✅ **Solução:** Aguarde o bloqueio expirar automaticamente",
+                                color=0xFF3333
+                            )
+                            await user.send(embed=embed)
+                    except:
+                        pass
             
             try:
                 msg = await canal.fetch_message(data["message_id"])
                 embed = discord.Embed(
                     title="⏰ Tempo Esgotado",
-                    description="O tempo para aceitar expirou.\n\n🚫 **Nunca mais verão esta pessoa!**",
+                    description="O tempo para aceitar expirou.\n\n⏰ **Poderão se encontrar novamente após 12 horas!**",
                     color=0xFF9999
                 )
                 await msg.edit(embed=embed, view=None)
@@ -644,10 +687,10 @@ class IndividualView(discord.ui.View):
                     f"**Procurando:** {preference_display}\n\n"
                     f"{strike_info}\n"
                     f"💫 **Você está na fila!**\n"
-                    f"⏰ Saída automática em 24h\n"
+                    f"⏰ Saída automática em 12h\n"
                     f"💬 Conversas de 10min\n"
                     f"🎧 Call disponível\n"
-                    f"🚫 Nunca mais verá a mesma pessoa"
+                    f"⏰ Encontro novamente após 12h"
                 ),
                 color=0x66FF99
             )
@@ -693,10 +736,10 @@ class IndividualView(discord.ui.View):
                 f"**Procurando:** {preference_display}\n\n"
                 f"{strike_info}\n"
                 f"💫 **Você está na fila!**\n"
-                f"⏰ Saída automática em 24h\n"
+                f"⏰ Saída automática em 12h\n"
                 f"💬 Conversas de 10min\n"
                 f"🎧 Call disponível\n"
-                f"🚫 Nunca mais verá a mesma pessoa"
+                f"⏰ Encontro novamente após 12h"
             ),
             color=0x66FF99
         )
@@ -782,7 +825,7 @@ class TicketView(discord.ui.View):
         
         embed_inicial = discord.Embed(
             title="💌 iTinder - Pronto para Conversar",
-            description=f"**Seu perfil:** {gender_display}\n**Procurando:** {preference_display}\n\n💌 **Clique em Entrar na Fila para começar!**\n🚫 Nunca mais verá a mesma pessoa",
+            description=f"**Seu perfil:** {gender_display}\n**Procurando:** {preference_display}\n\n💌 **Clique em Entrar na Fila para começar!**\n⏰ Encontro novamente após 12h",
             color=0x66FF99
         )
         
@@ -816,12 +859,8 @@ class ConversationView(discord.ui.View):
         accepted = data.setdefault("accepted", set())
         accepted.add(uid)
         
-        # === CORREÇÃO: REMOVE O CONVITE PENDENTE AO ACEITAR (SEM STRIKE) ===
-        current_time = time.time()
-        if uid in user_pending_invites:
-            # Remove o convite mais recente (se houver)
-            if user_pending_invites[uid]:
-                user_pending_invites[uid].pop()
+        # === REMOVE O CONVITE PENDENTE AO ACEITAR ===
+        remove_pending_invite(uid)
         
         try:
             msg = await self.canal.fetch_message(self.message_id)
@@ -851,7 +890,7 @@ class ConversationView(discord.ui.View):
                 msg = await self.canal.fetch_message(self.message_id)
                 embed = discord.Embed(
                     title="💫 Conversa Iniciada!",
-                    description="⏰ **10 minutos** de conversa\n🎧 **Call disponível**\n🚫 **Nunca mais** se verão após este chat",
+                    description="⏰ **10 minutos** de conversa\n🎧 **Call disponível**\n⏰ **Poderão se encontrar novamente após 12 horas**",
                     color=0x66FF99
                 )
                 await msg.edit(embed=embed, view=enc_view)
@@ -871,11 +910,14 @@ class ConversationView(discord.ui.View):
             await interaction.response.send_message("❌ Você não pode interagir aqui.", ephemeral=True)
             return
 
+        # === REMOVE O CONVITE PENDENTE AO SAIR ===
+        remove_pending_invite(uid)
+
         try:
             msg = await self.canal.fetch_message(self.message_id)
             embed = discord.Embed(
                 title="🚪 Usuário Saiu",
-                description=f"**{interaction.user.display_name} saiu da conversa.**\n\n💫 **Poderão se encontrar novamente!**",
+                description=f"**{interaction.user.display_name} saiu da conversa.**\n\n⏰ **Poderão se encontrar novamente após 12 horas!**",
                 color=0xFFA500
             )
             await msg.edit(embed=embed, view=None)
@@ -884,7 +926,7 @@ class ConversationView(discord.ui.View):
         
         await asyncio.sleep(3)
         await encerrar_canal_e_cleanup(self.canal)
-        await interaction.response.send_message("🚪 **Você saiu!** Poderá encontrar esta pessoa novamente.", ephemeral=True)
+        await interaction.response.send_message("🚪 **Você saiu!** Poderá encontrar esta pessoa novamente após 12 horas.", ephemeral=True)
 
     @discord.ui.button(label="🚫 Bloquear", style=discord.ButtonStyle.danger, custom_id="conv_bloquear")
     async def bloquear(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -893,6 +935,9 @@ class ConversationView(discord.ui.View):
         if uid not in (self.u1.id, self.u2.id):
             await interaction.response.send_message("❌ Você não pode interagir aqui.", ephemeral=True)
             return
+
+        # === REMOVE O CONVITE PENDENTE AO BLOQUEAR ===
+        remove_pending_invite(uid)
 
         # Define bloqueio permanente
         other_user_id = self.u2.id if uid == self.u1.id else self.u1.id
@@ -910,7 +955,7 @@ class ConversationView(discord.ui.View):
             pass
         
         await asyncio.sleep(3)
-        await encerrar_canal_e_cleanup(canal)
+        await encerrar_canal_e_cleanup(self.canal)
         await interaction.response.send_message("🚫 **Bloqueado!** Nunca mais verá esta pessoa.", ephemeral=True)
 
 class EncerrarView(discord.ui.View):
@@ -948,7 +993,7 @@ class EncerrarView(discord.ui.View):
             await interaction.response.send_message("❌ Você não pode encerrar.", ephemeral=True)
             return
 
-        await interaction.response.send_message("🚪 **Você saiu!** Poderá encontrar esta pessoa novamente.", ephemeral=True)
+        await interaction.response.send_message("🚪 **Você saiu!** Poderá encontrar esta pessoa novamente após 12 horas.", ephemeral=True)
         await encerrar_canal_e_cleanup(self.canal)
 
     @discord.ui.button(label="🚫 Bloquear", style=discord.ButtonStyle.danger, custom_id="bloquear_chat")
